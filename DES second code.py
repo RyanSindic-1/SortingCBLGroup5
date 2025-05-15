@@ -66,10 +66,10 @@ class Event:
     ENTER_OUTFEED = 2
     EXIT_OUTFEED = 3 
     # We should maybe add later on:  RECIRCULATE = 4 
-    def __init__(self, typ, time, cust = None):  # type is a reserved word
+    def __init__(self, typ, time, payload = None):  # type is a reserved word
         self.type = typ
         self.time = time
-        self.customer = cust
+        self.payload = payload
         
     def __lt__(self, other):
         return self.time < other.time
@@ -182,23 +182,34 @@ class PosiSorterSystem:
 
         while t < T:
             tOld = t
-            e = fes.next() #retrieve the next event in the FES and removes it
-            t = e.time
+            evt = fes.next() #retrieve the next event in the FES and removes it
+            t = evt.time
             #Handle ARRIVAL events
-            if e.type == Event.ARRIVAL:
+            if evt.type == Event.ARRIVAL:
                 b =  self.dist_infeeds_to_scanner / self.belt_speed   #time from infeed to scanner calculated with conveyor speed
                 scan = Event(Event.ENTER_SCANNER, t + b)
                 fes.add(scan) #scheduele the event
                 arr = Event(Event.ARRIVAL, parcels[i].arrival_time) #scheduele next arrival
             
             #handle ENTER_SCANNER events
-            elif e.type == Event.ENTER_SCANNER:
+            elif evt.type == Event.ENTER_SCANNER:
                 #information about the parcel is know from the sorting system
-                #
+                parcel = evt.payload
+                chosen_idx = None
+                for idx in parcel.feasible_outfeeds:
+                    if self.outfeeds[idx].can_accept(parcel):
+                        chosen_idx = idx
+                        break
+                if chosen_idx is not None:
+                    # travel time from scanner to that outfeed’s diverter
+                    dist = self.dist_scanner_to_outfeeds + chosen_idx * self.dist_between_outfeeds
+                    travel_time = dist / self.belt_speed
+                    at_outfeed  = self.clock + pd.Timedelta(seconds=travel_time)
+                    self.fes.add(Event(Event.ENTER_OUTFEED, at_outfeed, (parcel, chosen_idx)))
             #handle ENTER_OUTFEED events
-            elif e.type == Event.ENTER_OUTFEED:
+            elif evt.type == Event.ENTER_OUTFEED:
             #handle EXIT_OUTFEED events
-            elif e.type == Event.EXIT_OUTFEED:
+            elif evt.type == Event.EXIT_OUTFEED:
 
 
 
