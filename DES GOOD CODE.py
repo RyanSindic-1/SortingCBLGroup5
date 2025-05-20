@@ -113,6 +113,7 @@ class Parcel: #This replicates the Customer class, in which info about the custo
         self.feasible_outfeeds = feasible_outfeeds
         self.sorted = False
         self.recirculated = False
+        self.outfeed_attempts = [] #Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
 
     def get_volume(self):
         return self.length * self.width * self.height
@@ -195,7 +196,7 @@ class PosiSorterSystem:
             arrival_event =  Event(Event.ARRIVAL, p.arrival_time - t0, p) 
             fes.add(arrival_event) #scheduele the event 
         while not fes.isEmpty(): #T is still to be determined
-            tOld = t
+            tOld = t #not being used right now, ususally used to store waiting times.
             evt = fes.next() #retrieve the next event in the FES and removes it
             t = evt.time
             #Handle ARRIVAL events
@@ -211,21 +212,15 @@ class PosiSorterSystem:
                 #something like scanned_parcels = []
                 #I do not know how to implement the distance to different outfeeds yet. I put it with a k, the number of the outfeed.
                 parcel = evt.parcel
-                chosen_id = None
-                for k in parcel.feasible_outfeeds:                 # e.g. [0,2]
-                    if self.outfeeds[k].can_accept(parcel):
-                        chosen_id = k
-                        break
+                parcel.outfeed_attempts = list(parcel.feasible_outfeeds)  # Copy of the list
                 
-                # if none available, schedule a recirculation
-                if chosen_id is None:
-                    self.recirculated_count += 1
-                    time_start_recirculation = timedelta(seconds = (self.dist_scanner_to_outfeeds + self.dist_between_outfeeds * self.num_outfeeds) / self.belt_speed)
-                    fes.add(Event(Event.RECIRCULATE, t + time_start_recirculation, parcel))
-                    continue
-                
-                time_to_outfeed = timedelta(seconds = (self.dist_scanner_to_outfeeds + chosen_id * self.dist_between_outfeeds) / self.belt_speed)
-                fes.add(Event(Event.ENTER_OUTFEED,t + time_to_outfeed, parcel, outfeed_id=chosen_id))
+                parcel = evt.parcel
+                parcel.outfeed_attempts = list(parcel.feasible_outfeeds)
+                first_choice = parcel.outfeed_attempts.pop(0)
+
+                time_to_outfeed = timedelta(seconds=(self.dist_scanner_to_outfeeds + first_choice * self.dist_between_outfeeds) / self.belt_speed)
+                fes.add(Event(Event.ENTER_OUTFEED, t + time_to_outfeed, parcel, outfeed_id=first_choice))
+
 
             elif evt.type == Event.ENTER_OUTFEED:
                     #number of the outfeed should be included in the parcels data 
@@ -235,16 +230,30 @@ class PosiSorterSystem:
                         feed   = self.outfeeds[k]
                         parcel = evt.parcel
                         wall_clock = (t0 + evt.time).time()
-                        feed.add_parcel(parcel)
-                        self.outfeed_counts[k] += 1
+                        
                         # if this parcel is starting a (possibly empty) queue,
                         # schedule its exit when its discharge time elapses
+                        if not feed.can_accept(parcel):
+                            # Try next available outfeed, if any
+                            if parcel.outfeed_attempts:
+                                next_k = parcel.outfeed_attempts.pop(0)
+                                time_to_next = timedelta(seconds=self.dist_between_outfeeds / self.belt_speed)
+                                fes.add(Event(Event.ENTER_OUTFEED, t + time_to_next, parcel, outfeed_id=next_k))
+                            else:
+                                # No options left — recirculate
+                                self.recirculated_count += 1
+                                time_start_recirculation = timedelta(seconds=(self.dist_between_outfeeds * self.num_outfeeds + self.dist_outfeeds_to_infeeds + self.dist_infeeds_to_scanner) / self.belt_speed)
+                                fes.add(Event(Event.RECIRCULATE, t + time_start_recirculation, parcel))
+                            continue  # Skip rest of ENTER_OUTFEED
+                        
+                        #So if the outfeed can accept the parcel, we add it to the outfeed and update the current length of the outfeed.
+                        feed.add_parcel(parcel)
+                        self.outfeed_counts[k] += 1
+
                         if len(feed.current_parcels) == 1:
-                            discharge_time = timedelta(seconds = feed.current_parcels[0][1])          # computed inside add_parcel
-                            fes.add(Event(Event.EXIT_OUTFEED,
-                                        t + discharge_time,
-                                        parcel,
-                                        outfeed_id=k))
+                            discharge_time = timedelta(seconds=feed.current_parcels[0][1])
+                            fes.add(Event(Event.EXIT_OUTFEED, t + discharge_time, parcel, outfeed_id=k))
+
             elif evt.type == Event.EXIT_OUTFEED:
                 k    = evt.outfeed_id
                 feed = self.outfeeds[k]
