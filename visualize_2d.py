@@ -1,4 +1,7 @@
+# viz_plotly.py
+
 import pandas as pd
+import numpy as np
 import plotly.express as px
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
@@ -205,6 +208,4 @@ def create_dashboard(ev, ps):
 # RUN SERVER                                                                 #
 # -------------------------------------------------------------------------- #
 if __name__ == '__main__':
-    ev_df, ps_df = load_data()
-    app = create_dashboard(ev_df, ps_df)
-    app.run(debug=True)
+    main()
