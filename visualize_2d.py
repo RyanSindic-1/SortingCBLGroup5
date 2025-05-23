@@ -123,14 +123,31 @@ def create_dashboard(ev, ps):
             color_continuous_scale='Turbo',
             hover_data=['parcel_id'],
             title=f'Parcel Positions at t={t:.1f}s',
-            size_max=12
+            size_max=12  # this can stay or be removed
         )
-        # draw branching conveyors
+
+        # 1. Make the points larger
+        fig.update_traces(marker=dict(size=20))
+
+        # 2. Draw conveyor lines behind the scatter points
         shapes = [
-            dict(type='line', x0=0, y0=0, x1=scanner_frac, y1=0, line=dict(width=2, color='black'))
+            dict(
+                type='line',
+                x0=0, y0=0, x1=scanner_frac, y1=0,
+                line=dict(width=2, color='black'),
+                layer='below'               # ← send behind the points
+            )
         ]
         for y in y_positions.values():
-            shapes.append(dict(type='line', x0=scanner_frac, y0=0, x1=1, y1=y, line=dict(width=2, color='black')))
+            shapes.append(
+                dict(
+                    type='line',
+                    x0=scanner_frac, y0=0, x1=1, y1=y,
+                    line=dict(width=2, color='black'),
+                    layer='below'           # ← same here
+                )
+            )
+
         fig.update_layout(
             shapes=shapes,
             plot_bgcolor='white',
