@@ -1,7 +1,4 @@
-# viz_plotly.py
-
 import pandas as pd
-import numpy as np
 import plotly.express as px
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
@@ -55,20 +52,32 @@ def create_dashboard(ev, ps):
     # Layout: hide slider, use only Interval for real-time updates
     app.layout = html.Div([
         html.H1('PosiSorter Interactive Dashboard'),
-        dcc.Interval(
-            id='interval-component',
-            interval=500,    # 500ms per update
-            n_intervals=0
-        ),
+        dcc.Interval(id='interval-component', interval=500, n_intervals=0),
+
+        # ─── Row 1: animation ──────────────────────────────────────────────────
         dcc.Graph(id='anim-graph'),
+
+        # ─── Row 2: two stats side by side ────────────────────────────────────
         html.Div([
-            dcc.Graph(id='throughput-cumulative'),
-            dcc.Graph(id='bar-outfeed-counts')
-        ], style={'display': 'flex'}),
+            dcc.Graph(id='throughput-cumulative', style={'flex': '1'}),
+            dcc.Graph(id='bar-outfeed-counts',    style={'flex': '1'})
+        ], style={'display': 'flex', 'columnGap': '20px'}),
+
+        # ─── Row 3: two more side by side ────────────────────────────────────
         html.Div([
-            dcc.Graph(id='hist-recirculations'),
-            dcc.Graph(id='scatter-time-in-system')
-        ], style={'display': 'flex'})
+            dcc.Graph(id='hist-recirculations',      style={'flex': '1'}),
+            dcc.Graph(id='scatter-time-in-system',   style={'flex': '1'})
+        ], style={'display': 'flex', 'columnGap': '20px', 'marginTop': '20px'}),
+
+        # ─── Row 4: full-width bar chart ─────────────────────────────────────
+        html.Div(
+            dcc.Graph(
+                id='bar-time-per-parcel',
+                # make the container full width and give it extra height
+                style={'width': '100%', 'height': '600px'}
+            ),
+            style={'marginTop': '40px'}
+        )
     ], style={'padding': '20px'})
 
     # ---------------------------------------------------------------------- #
@@ -201,6 +210,24 @@ def create_dashboard(ev, ps):
         fig = px.scatter(ps, x='arrival_s', y='time_in_system', title='Time in System vs Arrival Time')
         fig.update_layout(xaxis_title='Arrival Time (s)', yaxis_title='Time in System (s)')
         return fig
+    
+    @app.callback(
+        Output('bar-time-per-parcel', 'figure'),
+        Input('interval-component', 'n_intervals')
+    )
+    def update_time_per_parcel(_):
+        fig = px.bar(
+            ps,
+            x='parcel_id',
+            y='time_in_system',
+            title='Time in System per Parcel ID'
+        )
+        fig.update_layout(
+            xaxis_title='Parcel ID',
+            yaxis_title='Time in System (s)',
+            height=500      # you can adjust up/down as you like
+        )
+        return fig
 
     return app
 
@@ -208,4 +235,6 @@ def create_dashboard(ev, ps):
 # RUN SERVER                                                                 #
 # -------------------------------------------------------------------------- #
 if __name__ == '__main__':
-    main()
+    ev_df, ps_df = load_data()
+    app = create_dashboard(ev_df, ps_df)
+    app.run(debug=True)
