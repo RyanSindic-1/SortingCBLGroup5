@@ -314,7 +314,7 @@ class PosiSorterSystem:
 # RUN SIMUALTION                                                             #
 # -------------------------------------------------------------------------- #
 def main():
-    xls = pd.ExcelFile("C:/Users/20231616/Documents/CBL Q4/PosiSorterData1.xlsx")
+    xls = pd.ExcelFile("PosiSorterData1.xlsx")
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
 
