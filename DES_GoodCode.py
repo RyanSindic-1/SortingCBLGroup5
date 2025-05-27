@@ -4,108 +4,203 @@ import pandas as pd
 import random
 from datetime import timedelta
 import math
+
 # -------------------------------------------------------------------------- #
 # IMPORT CLEANED DATA FROM EXCEL FILE                                        #
 # -------------------------------------------------------------------------- #
-def remove_outliers_iqr(df, columns):
-    for col in columns:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 2 * IQR
-        upper_bound = Q3 + 2 * IQR
-        df = df[df[col].between(lower_bound, upper_bound)]
+
+def remove_outliers_iqr(df, columns) -> pd.DataFrame:
+    """
+    Removes outliers from colums using IQR.
+    :param columns: columns in data frame
+    :return: data frame of excel file with outliers removed.
+    """
+
+    for col in columns:                                     
+        Q1 = df[col].quantile(0.25)                         # First quartile
+        Q3 = df[col].quantile(0.75)                         # Last quartile
+        IQR = Q3 - Q1                                       # Interquertile range
+        lower_bound = Q1 - 2 * IQR                          # Lower bound for outlier detection 
+        upper_bound = Q3 + 2 * IQR                          # Upper bound for outlier detection 
+        df = df[df[col].between(lower_bound, upper_bound)]  # Keep only rows that are in bound
     return df
 
-def drop_rows_without_true_outfeed(df, prefix="Outfeed"):
-    outfeed_cols = [col for col in df.columns if col.startswith(prefix)]
-    if not outfeed_cols:
-        return df
-    mask = df[outfeed_cols].any(axis=1)
+def drop_rows_without_true_outfeed(df, prefix="Outfeed") -> pd.DataFrame:
+    """
+    Removes columns from data frame that have no possible outfeed.
+    :param df: data frame from excel file
+    :param prefix: prefix set to "Outfeed"
+    :return: data frame of excel file with parcels without feasible outfeeds removed.
+    """
+
+    outfeed_cols = [col for col in df.columns if col.startswith(prefix)]  # Get all columns
+    if not outfeed_cols:                                                  # Remove columns that have no outfeed
+        return df        
+    mask = df[outfeed_cols].any(axis=1)                                   # Store columns with outfeed                    
     return df[mask]
 
-def clean_parcel_data(parcels_df):
-    drop_info = {}
-    drop_info['initial'] = initial_count = len(parcels_df)
+def clean_parcel_data(parcels_df) -> tuple[pd.DataFrame, dict]:
+    """
+    Cleans the data.
+    :param parcels_df: data frame of excel file with parcels
+    :return: clean data frame and information on how many rows were removed.
+    """
 
-    parcels_df = parcels_df.dropna().reset_index(drop=True)
-    after_na = len(parcels_df)
-    drop_info['na_dropped'] = initial_count - after_na
+    drop_info = {}                                           # Store removed rows
+    drop_info['initial'] = initial_count = len(parcels_df)   # Initialize count
+ 
+    parcels_df = parcels_df.dropna().reset_index(drop=True)  # Remove rows with NaNs
+    after_na = len(parcels_df) 
+    drop_info['na_dropped'] = initial_count - after_na       # Track amount of rows dropped due to NaNs
 
-    before_outliers = len(parcels_df)
+    before_outliers = len(parcels_df)                        # Remove rows with outliers
     parcels_df = remove_outliers_iqr(parcels_df, ["Length", "Width", "Height"])
     after_outliers = len(parcels_df)
-    drop_info['outliers_dropped'] = before_outliers - after_outliers
+    drop_info['outliers_dropped'] = before_outliers - after_outliers  # Track amount of rows dropped due to outlying values
 
-    before_outfeeds = len(parcels_df)
-    parcels_df = drop_rows_without_true_outfeed(parcels_df)
-    after_outfeeds = len(parcels_df)
-    drop_info['no_outfeeds_dropped'] = before_outfeeds - after_outfeeds
+    before_outfeeds = len(parcels_df)  # Remove rows with no feasible outfeeds
+    parcels_df = drop_rows_without_true_outfeed(parcels_df)                      
+    after_outfeeds = len(parcels_df) 
+    drop_info['no_outfeeds_dropped'] = before_outfeeds - after_outfeeds     # Track amount of rows dropped due to no feasible outfeeds
 
     drop_info['total_dropped'] = drop_info['na_dropped'] + drop_info['outliers_dropped'] + drop_info['no_outfeeds_dropped']
 
     return parcels_df, drop_info
 
-def load_parcels_from_clean_df(df):
-    parcels = []
-    for _, row in df.iterrows():
-        parcel_id = int(row['Parcel Number'])
-        arrival_time = pd.to_datetime(row['Arrival Time'])
-        length = float(row['Length'])
-        width = float(row['Width'])
-        height = float(row['Height'])
-        weight = float(row['Weight'])
-        feasible_outfeeds = [i for i, flag in enumerate([row['Outfeed 1'], row['Outfeed 2'], row['Outfeed 3']]) if flag]
+def load_parcels_from_clean_df(df) -> list:
+    """
+    Loads the data from the excel file
+    :param df: data frame from excel file
+    :return: list of parcel objects.
+    """
+
+    parcels = []                                                # Store parcel information
+    for _, row in df.iterrows():                                 
+        parcel_id = int(row['Parcel Number'])                   # Parcel number
+        arrival_time = pd.to_datetime(row['Arrival Time'])      # Arrival time package
+        length = float(row['Length'])                           # Lenght of package
+        width = float(row['Width'])                             # Width of package
+        height = float(row['Height'])                           # Height of package
+        weight = float(row['Weight'])                           # Weight of package
+        feasible_outfeeds = [i for i, flag in enumerate([row['Outfeed 1'], row['Outfeed 2'], row['Outfeed 3']]) if flag] # Feasible outfeeds
         parcels.append(Parcel(parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds))
     return sorted(parcels, key=lambda p: p.arrival_time)
 
 # -------------------------------------------------------------------------- #
 # EVENT CLASS                                                                #  
 # -------------------------------------------------------------------------- #
+
 class Event:
+    """
+    A class that represents events.
+    """
 
     ARRIVAL = 0
     ENTER_SCANNER = 1
     ENTER_OUTFEED = 2
     EXIT_OUTFEED = 3 
     RECIRCULATE = 4
-    def __init__(self, typ, time, parcel, outfeed_id = None):  # type is a reserved word
+
+    def __init__(self, typ, time, parcel, outfeed_id = None) -> None:  # type is a reserved word
         """
-        Parameters:
-        param1 (typ): What type of event it is, e.g, Arrival, scanner...
-        param2 (time): at what time the event occurs.
-        param3 (parcel): all the information of the parcel that is being processed.
-        param4 (outfeed_id): the outfeed to which the parcel goes. It is an optional parameter since it is only needed for events 2 and 3.
+        Initializes the attributes for the parcel class. 
+        :param typ: what type of event it is, e.g, Arrival, scanner...
+        :param time: at what time the event occurs
+        :param parcel: all the information of the parcel that is being processed
+        :param outfeed_id: the outfeed to which the parcel goes. It is an optional parameter since it is only needed for events 2 and 3.
         """
+
         self.type = typ
         self.time = time
         self.parcel = parcel
         self.outfeed_id = outfeed_id  # Only used for ENTER_OUTFEED and EXIT_OUTFEED events
         
-    def __lt__(self, other):
+    def __lt__(self, other) -> bool:
+        """
+        Compares this object with another object based on the 'time' attribute.
+        :param other: Another thing in the class to compare with.
+        :return: True if this object's time is less than the other object's time, False otherwise.
+        """
+
         return self.time < other.time
 
 class FES :
     """
-    Future Event Set (FES) for discrete event simulation.
+    A class that represents a Future Event Set (FES) for discrete event simulation.
     This class uses a priority queue to manage events in the simulation.
     Events are sorted by their time attribute, which is a float.
+
+    ...
+
+    Methods
+    -------
+    def add(self, event) -> None:
+        Adds an event to the Future Event Set
+    
+    def next(self) -> Event:
+        Retrieves and removes the next event from the Future Event Set.
+    
+    def isEmpty(self) -> bool:
+        Checks if the the Future Event Set is empty.
     """
-    def __init__(self):
+
+    def __init__(self) -> None:
+        """
+        Initializes the attribute for the FES class.
+        """
+
         self.events = []
         
-    def add(self, event):
+    def add(self, event) -> None:
+        """
+        Adds an event to the Future Event Set.
+        """
+
         heapq.heappush(self.events, event)
         
-    def next(self):
+    def next(self) -> Event:
+        """
+        Retrieves and removes the next event from the Future Event Set.
+        :return: the next event from the Future Event Set.
+        """
+
         return heapq.heappop(self.events)
     
-    def isEmpty(self):
+    def isEmpty(self) -> bool:
+        """
+        Checks if the the Future Event Set is empty.
+        :return: True if the set is empty, False otherwise.
+        """
+
         return len(self.events) == 0
 
-class Parcel: #This replicates the Customer class, in which info about the customers (parcels) is stored.
+class Parcel:
+    """
+    A class to represent a parcel. 
 
-    def __init__(self, parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds):
+    ...
+    
+    Methods 
+    -------
+    get_volume(self) -> float:
+        Calculates the volume of the parcel
+
+    compute_outfeed_time(parcel) -> float:
+        Determines the amount of time it costs to get unloaded from the outfeed.
+    """
+
+    def __init__(self, parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds) -> None:
+        """
+        Initializes the attributes for the parcel class. 
+        :param parcel_id: the parcel id number 
+        :param arrival_time: arrival time of the parcel
+        :param length: length of the parcel
+        :param width: width of the parcel
+        :param height: height of the parcel
+        :param weight: weight of the parcel
+        :param feasible_outfeeds: feasible outfeeds for each parcel
+        """
+
         self.id = parcel_id
         self.arrival_time = arrival_time
         self.length = length
@@ -115,16 +210,29 @@ class Parcel: #This replicates the Customer class, in which info about the custo
         self.feasible_outfeeds = feasible_outfeeds
         self.sorted = False
         self.recirculated = False
-        self.outfeed_attempts = [] #Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
-        self.recirculation_count = 0 # Used to keep track of the number of recirculations of each parcel so that we can cap it at 3
-    def get_volume(self):
+        self.outfeed_attempts = []  # Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
+        self.recirculation_count = 0  # Used to keep track of the number of recirculations of each parcel so that we can cap it at 3
+
+    def get_volume(self) -> float: 
+        """
+        Calculates the volume of the parcel.
+        :return: The volume of the parcel.
+        """
+
         return self.length * self.width * self.height
 
-def compute_outfeed_time(parcel):
+def compute_outfeed_time(parcel) -> float:
+    """
+    Determines the amount of time it costs to get unloaded from the outfeed
+    based on the volume and weight of the parcel.
+    :param parcel: a parcel
+    :return: the time it takes for the parcel to get unloaded from the outfeed.
+    """
+
     base_time = 4.5
 
     # Volume classes
-    volume = parcel.get_volume()
+    volume = parcel.get_volume()  # Get the volume of parcels and catergorize it
     if volume < 0.035:
         volume_class_delay = random.uniform(0.0, 0.5)
     elif volume < 0.055:
@@ -133,7 +241,7 @@ def compute_outfeed_time(parcel):
         volume_class_delay = random.uniform(1.5, 2.5)
 
     # Weight classes
-    weight = parcel.weight
+    weight = parcel.weight  # Get the weight of parcels and catergorize it
     if weight < 1700:
         weight_class_delay = random.uniform(0.0, 0.5)
     elif weight < 2800:
@@ -144,37 +252,90 @@ def compute_outfeed_time(parcel):
     return base_time + volume_class_delay + weight_class_delay
 
 class Outfeed:
-    def __init__(self, max_length=3.0):
-        self.max_length = max_length
-        self.current_parcels = []
-        self.current_length = 0.0
-        self.time_until_next_discharge = 0.0 
+    """
+    A class to represent the outfeed.
 
-    def can_accept(self, parcel):
+    ...
+
+    Methods
+    -------
+    can_accept(self, parcel) -> bool:
+        Determines if parcel can be accepted in an outfeed
+
+    add_parcel(self, parcel) -> None:
+        Adds parcel to certain outfeed
+
+    update(self, time_step, system_time) -> None:
+        Keeps track of all timings in the system.
+    """
+
+    def __init__(self, max_length=3.0) -> None:
+        """
+        Initializes the attributes for the parcel class. 
+        :param max_lentgh: the maximal length of an outfeed.
+        """
+
+        self.max_length = max_length            # Maximum length of the outfeed
+        self.current_parcels = []               # Stores the occupied length of the outfeed 
+        self.current_length = 0.0               # Current length set to 0 at start
+        self.time_until_next_discharge = 0.0    # Current waiting time, before parcel gets unloaded, set to 0 at start
+
+    def can_accept(self, parcel) -> bool:
+        """
+        Determines if parcel can be accepted in a outfeed.
+        :param parcel: a parcel
+        :return: True if the parcel can be accepted, False otherwise.
+        """
+
         return self.current_length + parcel.length <= self.max_length
 
-    def add_parcel(self, parcel):
+    def add_parcel(self, parcel) -> None:
+        """
+        Adds parcel to certain outfeed.
+        :param parcel: a parcel.
+        """
+
         self.current_parcels.append((parcel, compute_outfeed_time(parcel)))
         self.current_length += parcel.length
         if len(self.current_parcels) == 1:
-            #Timer for the current parcel 
-            self.time_until_next_discharge = self.current_parcels[0][1] 
+            # Timer for the current parcel 
+            self.time_until_next_discharge = self.current_parcels[0][1]
 
 
-    def update(self, time_step):
+    def update(self, time_step) -> None:
+        """
+        Keeps track of all timings in the system. 
+        :param time_step: time step
+        """
+
         if self.current_parcels:
             self.time_until_next_discharge -= time_step
             if self.time_until_next_discharge <= 0:
                 parcel, _ = self.current_parcels.pop(0)
                 self.current_length -= parcel.length
                 if self.current_parcels:
-                    #Timer for the next parcel in line
+                    # Timer for the next parcel in line
                     self.time_until_next_discharge = self.current_parcels[0][1]
 
 
 class PosiSorterSystem:
+    """
+     A class to represent the outfeed.
 
-    def __init__(self, layout_df): #Not sure if i should add arrdist or something similar here.
+    ...
+
+    Methods
+    -------
+    def simulate(self, parcels) -> None:
+        Simulates the system.
+    """
+
+    def __init__(self, layout_df) -> None:  # Not sure if i should add arrdist or something similar here.
+        """
+        Initializes the attributes for the PosiSorterSystem class.
+        :param layout_df: layout sheet of excel file.
+        """
+
         self.belt_speed                = layout_df.loc[layout_df['Layout property'] == 'Belt Speed',                 'Value'].values[0]
         self.dist_infeeds_to_scanner   = layout_df.loc[layout_df['Layout property'] == 'Distance Infeeds to Scanner','Value'].values[0]
         self.dist_scanner_to_outfeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Scanner to Outfeeds','Value'].values[0]
@@ -182,12 +343,17 @@ class PosiSorterSystem:
         self.dist_outfeeds_to_infeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Outfeeds to Infeeds','Value'].values[0]
         self.num_outfeeds = 3  # Given in Excel sheet. Can be automatically detected from the layout_df if needed.
         self.outfeeds = [Outfeed(max_length=3.0) for _ in range(self.num_outfeeds)]
-        #These are used to print statistics about the system:
+        #  These are used to print statistics about the system:
         self.recirculated_count = 0
         self.outfeed_counts = [0] * self.num_outfeeds
         self.non_sorted_parcels = 0
     
-    def simulate(self, parcels):
+    def simulate(self, parcels) -> None:
+        """
+        Simulates the system.
+        :param parcels: parcels. 
+        """
+
         fes =  FES()
         t = timedelta(0)
         t0 = parcels[0].arrival_time 
@@ -326,22 +492,20 @@ class PosiSorterSystem:
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
 
-
-
-
 # -------------------------------------------------------------------------- #
 # RUN SIMUALTION                                                             #
 # -------------------------------------------------------------------------- #
+
 def main():
-    xls = pd.ExcelFile("PosiSorterData1.xlsx")
-    parcels_df = xls.parse('Parcels')
-    layout_df = xls.parse('Layout')
+    xls = pd.ExcelFile("PosiSorterData1.xlsx")              # Load excel sheet with parcel data
+    parcels_df = xls.parse('Parcels')                       # Gets Parcels sheet of Excel file
+    layout_df = xls.parse('Layout')                         # Gets Layout sheet of Excel file
 
-    parcels_df, drop_info = clean_parcel_data(parcels_df)
+    parcels_df, drop_info = clean_parcel_data(parcels_df)   # Clear the data
 
-    parcels = load_parcels_from_clean_df(parcels_df)
+    parcels = load_parcels_from_clean_df(parcels_df)  # Configurate the clean data into a list with parcel objects
     system = PosiSorterSystem(layout_df)
-    system.simulate(parcels)  
+    system.simulate(parcels)  # Runs the simulation
 
 if __name__ == "__main__":
     main()
