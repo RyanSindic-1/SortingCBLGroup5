@@ -1,7 +1,9 @@
 import heapq
+import time
 import pandas as pd
 import random
 from datetime import timedelta
+import math
 # -------------------------------------------------------------------------- #
 # IMPORT CLEANED DATA FROM EXCEL FILE                                        #
 # -------------------------------------------------------------------------- #
@@ -114,7 +116,7 @@ class Parcel: #This replicates the Customer class, in which info about the custo
         self.sorted = False
         self.recirculated = False
         self.outfeed_attempts = [] #Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
-
+        self.recirculation_count = 0 # Used to keep track of the number of recirculations of each parcel so that we can cap it at 3
     def get_volume(self):
         return self.length * self.width * self.height
 
@@ -183,7 +185,7 @@ class PosiSorterSystem:
         #These are used to print statistics about the system:
         self.recirculated_count = 0
         self.outfeed_counts = [0] * self.num_outfeeds
-        self.total_processed = 0
+        self.non_sorted_parcels = 0
     
     def simulate(self, parcels):
         fes =  FES()
@@ -261,7 +263,17 @@ class PosiSorterSystem:
                         self.outfeed_counts[k] += 1
 
                         if len(feed.current_parcels) == 1:
-                            discharge_time = timedelta(seconds=feed.current_parcels[0][1])
+                            # To add the additional time that the parcel takes since it enters the outfeed until it is at the bottom of it, I assume
+                            # we are treating with GRAVITY ROLLER CONVEYORS, since if we had a belt conveyor, the outfeeds could not stop there and form a queue.
+                            # This time is low, so it is only important when there are no more parcels in the outfeed.
+                            # I simulate a simple inclined plane physics problem, where the outfeed is tilted 25 degrees, initial velocity is 0, and there is a bit of friction.
+                            theta = 25  # degrees
+                            theta_rad = math.radians(theta)  # convert to radians
+                            g = 9.81 #m/s^2
+                            mu = 0.03 # coefficient of friction
+                            a = g * (math.sin(theta_rad) - mu * math.cos(theta_rad))  # acceleration down the slope
+                            time_to_bottom = math.sqrt((2 * feed.max_length) / a)  # time to reach the bottom of the outfeed
+                            discharge_time = timedelta(seconds=feed.current_parcels[0][1] + time_to_bottom)
                             fes.add(Event(Event.EXIT_OUTFEED, t + discharge_time, parcel, outfeed_id=k))
 
             elif evt.type == Event.EXIT_OUTFEED:
@@ -280,8 +292,11 @@ class PosiSorterSystem:
                                 t + discharge_time,
                                 next_parcel,
                                 outfeed_id=k))
-                elif evt.type == Event.RECIRCULATE:
-                    parcel = evt.parcel
+            elif evt.type == Event.RECIRCULATE:
+                parcel = evt.parcel
+
+                if parcel.recirculation_count < 3:  # If the parcel has been recirculated 3 times, it is discarded.
+                    parcel.recirculation_count += 1 #Add a recirculation count to the parcel.
                     time_to_arrival = timedelta(seconds=(self.dist_outfeeds_to_infeeds) / self.belt_speed)
                     # candidate arrival moment on the belt
                     proposed_arrival_time = t + time_to_arrival
@@ -294,6 +309,9 @@ class PosiSorterSystem:
                     arrival = Event(Event.ARRIVAL, proposed_arrival_time, parcel)
                     fes.add(arrival)
                     last_arrival_time = proposed_arrival_time
+                else:
+                    print(f"[{wall_clock}] Parcel {parcel.id} discarded after 3 recirculations.")
+                    self.non_sorted_parcels += 1
                 #PREVIOUS LOGIC IN WHICH MERGE INTO ARRIVBAL POINT IS NOT TAKEN INTO ACCOUNT
                 #time_to_scanner = timedelta(seconds = (self.dist_outfeeds_to_infeeds + self.dist_infeeds_to_scanner) / self.belt_speed)
                 #rescan = Event(Event.ENTER_SCANNER, t + time_to_scanner, parcel)
@@ -305,6 +323,7 @@ class PosiSorterSystem:
         print(f"Parcels recirculated: {self.recirculated_count}")
         for i, count in enumerate(self.outfeed_counts):
             print(f"Parcels sent to Outfeed {i}: {count}")
+        print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
 
 
@@ -322,8 +341,7 @@ def main():
 
     parcels = load_parcels_from_clean_df(parcels_df)
     system = PosiSorterSystem(layout_df)
-    system.simulate(parcels)  # Simulate for 1 hour/s (in seconds)
-    # system.run_simulation(parcels)
+    system.simulate(parcels)  
 
 if __name__ == "__main__":
     main()
