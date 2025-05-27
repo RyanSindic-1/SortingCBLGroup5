@@ -5,7 +5,7 @@ from datetime import timedelta
 from collections import deque
 
 import sorting_algorithms as sa 
-from data_loader import load_all_data
+
 # --------------------------------------------------------------------------
 # DATA CLEANING FUNCTIONS
 # --------------------------------------------------------------------------
@@ -94,20 +94,19 @@ def compute_outfeed_time(parcel):
     base_time = 4.5
     volume = parcel.get_volume()
     if volume < 0.035:
-        vol_delay = random.uniform(0.0, 0.5)
+        vol_delay = 0
     elif volume < 0.055:
-        vol_delay = random.uniform(0.5, 1.5)
+        vol_delay = 1
     else:
-        vol_delay = random.uniform(1.5, 2.5)
+        vol_delay = 2
 
     weight = parcel.weight
     if weight < 1700:
-        wt_delay = random.uniform(0.0, 0.5)
+        wt_delay = 0
     elif weight < 2800:
-        wt_delay = random.uniform(0.5, 1.5)
+        wt_delay = 1
     else:
-        wt_delay = random.uniform(1.5, 2.5)
-
+        wt_delay = 2
     return base_time + vol_delay + wt_delay
 
 class Outfeed:
