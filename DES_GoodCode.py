@@ -9,6 +9,19 @@ import math
 # IMPORT CLEANED DATA FROM EXCEL FILE                                        #
 # -------------------------------------------------------------------------- #
 
+def drop_non_chronological_arrivals(df):                  # Remove rows with non-chronological arrival times
+    valid_times = []
+    last_time = pd.Timestamp.min                          # Initialize with the earliest possible timestamp
+
+    for i, time in enumerate(df["Arrival Time"]):         # Loop through each arrival time in the DataFrame
+        if time >= last_time:
+            valid_times.append(True)                      # If not chronogica, append
+            last_time = time
+        else:
+            valid_times.append(False)                     # If not chronogical, don't append
+
+    return df[valid_times].reset_index(drop=True)
+
 def remove_outliers_iqr(df, columns) -> pd.DataFrame:
     """
     Removes outliers from colums using IQR.
@@ -63,7 +76,12 @@ def clean_parcel_data(parcels_df) -> tuple[pd.DataFrame, dict]:
     after_outfeeds = len(parcels_df) 
     drop_info['no_outfeeds_dropped'] = before_outfeeds - after_outfeeds     # Track amount of rows dropped due to no feasible outfeeds
 
-    drop_info['total_dropped'] = drop_info['na_dropped'] + drop_info['outliers_dropped'] + drop_info['no_outfeeds_dropped']
+    before_chrono = len(parcels_df)                                             # Remove rows with non-chronological arrival times
+    parcels_df = drop_non_chronological_arrivals(parcels_df)
+    after_chrono = len(parcels_df)
+    drop_info['non_chrono_dropped'] = before_chrono - after_chrono              # Track amount of rows dropped due to no non-chronological arrival time
+    
+    drop_info['total_dropped'] = drop_info['na_dropped'] + drop_info['outliers_dropped'] + drop_info['no_outfeeds_dropped'] + drop_info['non_chrono_dropped']  # Total amount of rows dropped
 
     return parcels_df, drop_info
 
