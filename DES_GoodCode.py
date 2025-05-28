@@ -360,7 +360,12 @@ class PosiSorterSystem:
         self.dist_infeeds_to_scanner   = layout_df.loc[layout_df['Layout property'] == 'Distance Infeeds to Scanner','Value'].values[0]
         self.dist_scanner_to_outfeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Scanner to Outfeeds','Value'].values[0]
         self.dist_between_outfeeds     = layout_df.loc[layout_df['Layout property'] == 'Distance between Outfeeds',  'Value'].values[0]
-        self.dist_outfeeds_to_infeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Outfeeds to Infeeds','Value'].values[0]
+        possible_keys = ["Distance Outfeeds to Infeeds", "Distance Infeeds to Arrival"]
+        match = layout_df[layout_df['Layout property'].isin(possible_keys)]
+        if not match.empty:
+          self.dist_outfeeds_to_infeeds = match['Value'].values[0]
+        else:
+          self.dist_outfeeds_to_infeeds = None  
         self.num_outfeeds = num_outfeeds  # Given in Excel sheet. Can be automatically detected from the layout_df if needed.
         self.outfeeds = [Outfeed(max_length=3.0) for _ in range(self.num_outfeeds)]
         #  These are used to print statistics about the system:
