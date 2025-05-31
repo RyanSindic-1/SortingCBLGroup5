@@ -4,7 +4,7 @@ import pandas as pd
 import random
 from datetime import timedelta
 import math
-
+from collections import deque
 # -------------------------------------------------------------------------- #
 # IMPORT CLEANED DATA FROM EXCEL FILE                                        #
 # -------------------------------------------------------------------------- #
@@ -416,9 +416,8 @@ class PosiSorterSystem:
                 #something like scanned_parcels = []
                 #I do not know how to implement the distance to different outfeeds yet. I put it with a k, the number of the outfeed.
                 parcel = evt.parcel
-                parcel.outfeed_attempts = list(parcel.feasible_outfeeds)  # Copy of the list
-                
-                first_choice = parcel.outfeed_attempts.pop(0)
+                parcel.outfeed_attempts = deque(parcel.feasible_outfeeds)  # Copy of the list
+                first_choice = parcel.outfeed_attempts.popleft()
 
                 time_to_outfeed = timedelta(seconds=(self.dist_scanner_to_outfeeds + first_choice * self.dist_between_outfeeds) / self.belt_speed)
                 fes.add(Event(Event.ENTER_OUTFEED, t + time_to_outfeed, parcel, outfeed_id=first_choice))
@@ -438,7 +437,7 @@ class PosiSorterSystem:
                         if not feed.can_accept(parcel):
                             # Try next available outfeed, if any
                             if parcel.outfeed_attempts:
-                                next_k = parcel.outfeed_attempts.pop(0)
+                                next_k = parcel.outfeed_attempts.popleft()
                                 time_to_next = timedelta(seconds=self.dist_between_outfeeds / self.belt_speed)
                                 fes.add(Event(Event.ENTER_OUTFEED, t + time_to_next, parcel, outfeed_id=next_k))
                             else:
