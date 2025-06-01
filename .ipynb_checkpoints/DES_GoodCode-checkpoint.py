@@ -4,7 +4,7 @@ import pandas as pd
 import random
 from datetime import timedelta
 import math
-from collections import deque
+
 # -------------------------------------------------------------------------- #
 # IMPORT CLEANED DATA FROM EXCEL FILE                                        #
 # -------------------------------------------------------------------------- #
@@ -102,7 +102,7 @@ def load_parcels_from_clean_df(df) -> list:
         width = float(row['Width'])                             # Width of package
         height = float(row['Height'])                           # Height of package
         weight = float(row['Weight'])                           # Weight of package
-        feasible_outfeeds = [i for i, col in enumerate(outfeed_columns) if row[col]] # Feasible outfeeds
+        feasible_outfeeds = [i for i, flag in enumerate([row['Outfeed 1'], row['Outfeed 2'], row['Outfeed 3']]) if flag] # Feasible outfeeds
         parcels.append(Parcel(parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds))
     return sorted(parcels, key=lambda p: p.arrival_time), num_outfeeds
 
@@ -360,8 +360,10 @@ class PosiSorterSystem:
         self.dist_infeeds_to_scanner   = layout_df.loc[layout_df['Layout property'] == 'Distance Infeeds to Scanner','Value'].values[0]
         self.dist_scanner_to_outfeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Scanner to Outfeeds','Value'].values[0]
         self.dist_between_outfeeds     = layout_df.loc[layout_df['Layout property'] == 'Distance between Outfeeds',  'Value'].values[0]
+        self.dist_outfeeds_to_infeeds  = layout_df.loc[layout_df['Layout property'] == 'Distance Outfeeds to Infeeds','Value'].values[0]
         possible_keys = ["Distance Outfeeds to Infeeds", "Distance Infeeds to Arrival"]
         match = layout_df[layout_df['Layout property'].isin(possible_keys)]
+
         if not match.empty:
           self.dist_outfeeds_to_infeeds = match['Value'].values[0]
         else:
@@ -416,8 +418,9 @@ class PosiSorterSystem:
                 #something like scanned_parcels = []
                 #I do not know how to implement the distance to different outfeeds yet. I put it with a k, the number of the outfeed.
                 parcel = evt.parcel
-                parcel.outfeed_attempts = deque(parcel.feasible_outfeeds)  # Copy of the list
-                first_choice = parcel.outfeed_attempts.popleft()
+                parcel.outfeed_attempts = list(parcel.feasible_outfeeds)  # Copy of the list
+                
+                first_choice = parcel.outfeed_attempts.pop(0)
 
                 time_to_outfeed = timedelta(seconds=(self.dist_scanner_to_outfeeds + first_choice * self.dist_between_outfeeds) / self.belt_speed)
                 fes.add(Event(Event.ENTER_OUTFEED, t + time_to_outfeed, parcel, outfeed_id=first_choice))
@@ -437,7 +440,7 @@ class PosiSorterSystem:
                         if not feed.can_accept(parcel):
                             # Try next available outfeed, if any
                             if parcel.outfeed_attempts:
-                                next_k = parcel.outfeed_attempts.popleft()
+                                next_k = parcel.outfeed_attempts.pop(0)
                                 time_to_next = timedelta(seconds=self.dist_between_outfeeds / self.belt_speed)
                                 fes.add(Event(Event.ENTER_OUTFEED, t + time_to_next, parcel, outfeed_id=next_k))
                             else:
