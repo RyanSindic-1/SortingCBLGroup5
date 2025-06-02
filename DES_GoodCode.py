@@ -2,7 +2,7 @@ import heapq
 import time
 import pandas as pd
 import random
-from datetime import timedelta
+from datetime import timedelta 
 import math
 from collections import deque
 from data_cleaning import (
@@ -258,7 +258,7 @@ class PosiSorterSystem:
         Simulates the system.
     """
 
-    def __init__(self, layout_df, num_outfeeds) -> None:  # Not sure if i should add arrdist or something similar here.
+    def __init__(self, layout_df, num_outfeeds, sorting_algorithm) -> None:  # Not sure if i should add arrdist or something similar here.
         """
         Initializes the attributes for the PosiSorterSystem class.
         :param layout_df: layout sheet of excel file.
@@ -270,6 +270,7 @@ class PosiSorterSystem:
         self.dist_between_outfeeds     = layout_df.loc[layout_df['Layout property'] == 'Distance between Outfeeds',  'Value'].values[0]
         possible_keys = ["Distance Outfeeds to Infeeds", "Distance Infeeds to Arrival"]
         match = layout_df[layout_df['Layout property'].isin(possible_keys)]
+        self.sorting_algorithm = sorting_algorithm 
         if not match.empty:
           self.dist_outfeeds_to_infeeds = match['Value'].values[0]
         else:
@@ -324,6 +325,7 @@ class PosiSorterSystem:
                 #something like scanned_parcels = []
                 #I do not know how to implement the distance to different outfeeds yet. I put it with a k, the number of the outfeed.
                 parcel = evt.parcel
+                outfeed_priority = self.sorting_algorithm(parcel, scanned_parcels=None)
                 parcel.outfeed_attempts = deque(parcel.feasible_outfeeds)  # Copy of the list
                 first_choice = parcel.outfeed_attempts.popleft()
 
@@ -436,7 +438,7 @@ def main():
     parcels_df, drop_info = clean_parcel_data(parcels_df)   # Clear the data
 
     parcels, num_outfeeds = load_parcels_from_clean_df(parcels_df)  # Configurate the clean data into a list with parcel objects
-    system = PosiSorterSystem(layout_df, num_outfeeds)
+    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=fcfs)
     system.simulate(parcels)  # Runs the simulation
 
 if __name__ == "__main__":
