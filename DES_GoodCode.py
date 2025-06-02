@@ -443,7 +443,7 @@ def main():
     parcels_df, drop_info = clean_parcel_data(parcels_df)   # Clear the data
 
     parcels, num_outfeeds = load_parcels_from_clean_df(parcels_df)  # Configurate the clean data into a list with parcel objects
-    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=fcfs)
+    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=genetic)
     system.simulate(parcels)  # Runs the simulation
 
 if __name__ == "__main__":
