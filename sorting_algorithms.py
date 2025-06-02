@@ -1,5 +1,12 @@
+# algorithm.py
+
 from collections import deque
 import random
+
+# ── IMPORT THE NEW ML MODULE ────────────────────────────────────────────────────
+from ml_sorting import OutfeedML
+
+# ────────────────────────────────────────────────────────────────────────────────
 
 def greedy(p, loads, outfeeds):
     """
@@ -13,7 +20,11 @@ def greedy(p, loads, outfeeds):
     Returns:
     - index of chosen outfeed, or None if no feasible outfeed.
     """
-    feas = [k for k in p.feasible_outfeeds if loads[k] + p.length <= outfeeds[k].max_length]
+    feas = [
+        k
+        for k in p.feasible_outfeeds
+        if loads[k] + p.length <= outfeeds[k].max_length
+    ]
     if not feas:
         return None
     return min(feas, key=lambda k: loads[k])
@@ -77,15 +88,14 @@ def run_local_search(window, loads, outfeeds, assignment, max_iters=100):
     for pid, new_k in assign_w.items():
         assignment[pid] = new_k
 
+
 def fcfs(parcel) -> deque[int]:
     """
     First-Come-First-Serve algorithm for assigning parcels to outfeeds.
     :param parcel: parcel object.
-    :return: a dubble-ended queue containing the ordered outfeeds ID's.
-    """ 
-    return parcel.feasible_outfeeds.copy()
-
-
+    :return: a double-ended queue containing the ordered outfeeds ID's.
+    """
+    return deque(parcel.feasible_outfeeds.copy())
 
 
 def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> int:
@@ -99,11 +109,10 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
 
     def fitness(outfeed_id) -> float:
         """
-        Prioriteze closer outfeeds (outfeeds with lower index)
+        Prioritize closer outfeeds (outfeeds with lower index)
         :param outfeed_id: ID of the outfeed
         :return: float of representation of ID with higher fitness.
         """
-
         return 1 / (1 + outfeed_id)  # Lower index gets higher fitness
 
     population = [random.choice(feasible_outfeeds) for _ in range(population_size)]
@@ -130,3 +139,40 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
 
     best_individual = max(population, key=fitness)
     return best_individual
+
+
+# ── NEW: MACHINE-LEARNING-BASED “FIRST SERVE” ──────────────────────────────────────
+
+# We’ll create a single global instance of OutfeedML. In practice, you might
+# want to load a saved model from disk (e.g. “outfeed_model.pkl”). For now, 
+# we leave `ml_model` un-trained until `main.py` calls its `.fit(...)`.
+ml_model: OutfeedML = None
+
+def initialize_ml_model(model_path: str = None):
+    """
+    Call this once at program start. If model_path is provided, we load a pre-trained model.
+    Otherwise, we instantiate a fresh OutfeedML for training.
+    """
+    global ml_model
+    if model_path:
+        ml_model = OutfeedML.load(model_path)
+    else:
+        ml_model = OutfeedML()  # fresh, un-trained
+    return ml_model
+
+
+def mlfs(parcel) -> deque[int]:
+    """
+    “Machine-Learning First Serve”:
+      1. We assume `ml_model` has already been `.fit(...)` or loaded.
+      2. We compute one predicted outfeed ID via `ml_model.predict(parcel)`.
+      3. We return a deque with exactly that one ID. 
+         If that outfeed is full, your simulation logic will pop it,
+         see it's full, then attempt next from `parcel.outfeed_attempts` (which
+         came from parcel.feasible_outfeeds), and eventually recirculate if needed.
+    """
+    if ml_model is None or not ml_model.is_trained:
+        raise RuntimeError("ml_model not initialized or not trained. Call initialize_ml_model(...) and then .fit(...) before using mlfs().")
+
+    chosen = ml_model.predict(parcel)  # single int
+    return deque([chosen])
