@@ -3,6 +3,7 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
+from sorting_algorithms import fcfs, genetic
 import math
 from collections import deque
 from data_cleaning import (
@@ -17,6 +18,8 @@ from data_cleaning import (
 # -------------------------------------------------------------------------- #
 # EVENT CLASS                                                                #  
 # -------------------------------------------------------------------------- #
+
+start = time.time()
 
 class Event:
     """
@@ -325,7 +328,7 @@ class PosiSorterSystem:
                 #something like scanned_parcels = []
                 #I do not know how to implement the distance to different outfeeds yet. I put it with a k, the number of the outfeed.
                 parcel = evt.parcel
-                outfeed_priority = self.sorting_algorithm(parcel, scanned_parcels=None)
+                outfeed_priority = self.sorting_algorithm(parcel)
                 parcel.outfeed_attempts = deque(parcel.feasible_outfeeds)  # Copy of the list
                 first_choice = parcel.outfeed_attempts.popleft()
 
@@ -416,7 +419,9 @@ class PosiSorterSystem:
                 #time_to_scanner = timedelta(seconds = (self.dist_outfeeds_to_infeeds + self.dist_infeeds_to_scanner) / self.belt_speed)
                 #rescan = Event(Event.ENTER_SCANNER, t + time_to_scanner, parcel)
                 #fes.add(rescan)
-        
+
+        end = time.time()
+
         # Print statistics
         print("\n--- Simulation Summary ---")
         print(f"Total parcels processed: {len(parcels)}")
@@ -425,7 +430,7 @@ class PosiSorterSystem:
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
-
+        print(f"Run time: {end - start}")
 # -------------------------------------------------------------------------- #
 # RUN SIMUALTION                                                             #
 # -------------------------------------------------------------------------- #
