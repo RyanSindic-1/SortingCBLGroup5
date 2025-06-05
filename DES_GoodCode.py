@@ -178,7 +178,7 @@ class PosiSorterSystem:
         t0 = parcels[0].arrival_time
 
         last_arrival_time = timedelta(0)
-        safety_spacing = 0.3    
+        safety_spacing = 0.2    
         int_arrival_safety_time = timedelta(seconds=safety_spacing / self.belt_speed)
 
         # Schedule all ARRIVAL events up front
@@ -312,12 +312,18 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xls = pd.ExcelFile("PosiSorterData1.xlsx")
+    xls = pd.ExcelFile("PosiSorterData2.xlsx")
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
 
     parcels_df, drop_info = clean_parcel_data(parcels_df)
     parcels, num_outfeeds = load_parcels_from_clean_df(parcels_df)
+    #Check if the data is clean.
+    no_outfeed_parcels = [p for p in parcels if not p.feasible_outfeeds]
+    print(f"Parcels with no feasible outfeeds: {len(no_outfeed_parcels)}")
+
+    for p in no_outfeed_parcels:
+        print(f"Parcel ID {p.id} has no feasible outfeeds.")
 
     # 2. INITIALIZE & (OPTIONALLY) TRAIN / LOAD ML MODEL
     #    ───────────────────────────────────────────────────────────────────────
@@ -339,9 +345,9 @@ def main():
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
     
-    # sorting_algo = fcfs
-    # sorting_algo = genetic
-    sorting_algo = mlfs
+    #sorting_algo = fcfs
+    sorting_algo = genetic
+    #sorting_algo = mlfs
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
