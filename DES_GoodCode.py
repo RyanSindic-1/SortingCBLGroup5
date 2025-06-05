@@ -235,7 +235,8 @@ class PosiSorterSystem:
                     else:
                         last_outfeed = parcel.feasible_outfeeds[-1]
                         # No options left → recirculate
-                        self.recirculated_count += 1
+                        if parcel.recirculation_count == 0:
+                            self.recirculated_count += 1
                         time_start_recirculation = timedelta(
                             seconds=(self.dist_between_outfeeds * (self.num_outfeeds - last_outfeed)) / self.belt_speed
                         )
@@ -300,6 +301,8 @@ class PosiSorterSystem:
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
+        success_rate = ((len(parcels) - self.recirculated_count) / len(parcels)) * 100
+        print(f"Sorting success rate (no recirculation): {success_rate:.2f}%")
         print(f"Run time: {end - start}")
 
 
