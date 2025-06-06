@@ -3,7 +3,7 @@
 from collections import deque
 import random
 
-# ── IMPORT THE NEW ML MODULE ────────────────────────────────────────────────────
+# ── IMPORT THE ML MODULE ────────────────────────────────────────────────────
 from ml_sorting import OutfeedML
 
 # ────────────────────────────────────────────────────────────────────────────────

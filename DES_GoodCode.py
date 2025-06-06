@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
-from sorting_algorithms import fcfs, genetic, initialize_ml_model, mlfs
+from sorting_algorithms import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance
 import math
 from collections import deque
 
@@ -91,20 +91,20 @@ def compute_outfeed_time(parcel) -> float:
     # Volume classes
     volume = parcel.get_volume()
     if volume < 0.035:
-        volume_class_delay = random.uniform(0.0, 0.5)
+        volume_class_delay = 0
     elif volume < 0.055:
-        volume_class_delay = random.uniform(0.5, 1.5)
+        volume_class_delay = 1
     else:
-        volume_class_delay = random.uniform(1.5, 2.5)
+        volume_class_delay = 2
 
     # Weight classes
     weight = parcel.weight
     if weight < 1700:
-        weight_class_delay = random.uniform(0.0, 0.5)
+        weight_class_delay = 0
     elif weight < 2800:
-        weight_class_delay = random.uniform(0.5, 1.5)
+        weight_class_delay = 1
     else:
-        weight_class_delay = random.uniform(1.5, 2.5)
+        weight_class_delay = 2
 
     return base_time + volume_class_delay + weight_class_delay
 
@@ -172,13 +172,29 @@ class PosiSorterSystem:
         self.outfeed_counts = [0] * self.num_outfeeds
         self.non_sorted_parcels = 0
 
+        # ─── LOAD‐BALANCING STATE ───────────────────────────────────────────────
+        # track “sum of service times” on each channel
+        self.loads = {k: 0.0 for k in range(self.num_outfeeds)}
+        # track service times of parcels (parcel.id → service_time)
+        self.service_times = {}
+        # track which outfeed each parcel was assigned to (parcel.id → outfeed_id)
+        self.assignment = {}
+    
+        self.WINDOW_DURATION = timedelta(seconds=(self.dist_scanner_to_outfeeds / self.belt_speed))
+        self.window = deque()
+        # how many arrivals until we run one local‐search
+        self.REBALANCE_INTERVAL = 1
+        self.rebal_ctr = 0
+        # record parcels that had to recirculate because no outfeed was free “this round”
+        self.first_pass_failures = set()
+
     def simulate(self, parcels) -> None:
         fes = FES()
         t = timedelta(0)
         t0 = parcels[0].arrival_time
 
         last_arrival_time = timedelta(0)
-        safety_spacing = 0.2    
+        safety_spacing = 0.3    
         int_arrival_safety_time = timedelta(seconds=safety_spacing / self.belt_speed)
 
         # Schedule all ARRIVAL events up front
@@ -203,21 +219,23 @@ class PosiSorterSystem:
 
             elif evt.type == Event.ENTER_SCANNER:
                 parcel = evt.parcel
-                # Here is where we call sorting_algorithm → could be fcfs, genetic, or mlfs
-                choice = self.sorting_algorithm(parcel)
 
-                # If the algorithm returned a deque, we use that. If it returned an int, wrap in deque.
-                if isinstance(choice, int):
-                    parcel.outfeed_attempts = deque([choice])
+                # If “load_balance” is chosen as the sorting_algorithm, jump to LB code:
+                if self.sorting_algorithm is load_balance:
+                    handle_enter_scanner_time(self, evt, fes)
                 else:
-                    parcel.outfeed_attempts = deque(choice)
+                    # Otherwise, run the other chosen sorting algorithm:
+                    choice = self.sorting_algorithm(parcel)
+                    if isinstance(choice, int):
+                        parcel.outfeed_attempts = deque([choice])
+                    else:
+                        parcel.outfeed_attempts = deque(choice)
 
-                # First candidate
-                first_choice = parcel.outfeed_attempts.popleft()
-                time_to_outfeed = timedelta(
+                    first_choice = parcel.outfeed_attempts.popleft()
+                    time_to_outfeed = timedelta(
                     seconds = (self.dist_scanner_to_outfeeds + first_choice * self.dist_between_outfeeds) / self.belt_speed
-                )
-                fes.add(Event(Event.ENTER_OUTFEED, t + time_to_outfeed, parcel, outfeed_id=first_choice))
+                    )
+                    fes.add(Event(Event.ENTER_OUTFEED, t + time_to_outfeed, parcel, outfeed_id=first_choice))
 
 
             elif evt.type == Event.ENTER_OUTFEED:
@@ -235,8 +253,7 @@ class PosiSorterSystem:
                     else:
                         last_outfeed = parcel.feasible_outfeeds[-1]
                         # No options left → recirculate
-                        if parcel.recirculation_count == 0:
-                            self.recirculated_count += 1
+                        self.recirculated_count += 1
                         time_start_recirculation = timedelta(
                             seconds=(self.dist_between_outfeeds * (self.num_outfeeds - last_outfeed)) / self.belt_speed
                         )
@@ -246,6 +263,11 @@ class PosiSorterSystem:
                 # If feed can accept:
                 feed.add_parcel(parcel)
                 self.outfeed_counts[k] += 1
+
+                # Record service time and upload tracker
+                service_time = feed.current_parcels[-1][1]
+                self.service_times[parcel.id] = service_time
+                self.loads[k] += service_time
 
                 if len(feed.current_parcels) == 1:
                     theta = 25  # degrees
@@ -267,6 +289,7 @@ class PosiSorterSystem:
                 print(f"[{wall_clock}] Parcel {parcel.id} removed from outfeed {k}")
 
                 feed.update(feed.time_until_next_discharge)
+                self.loads[k] -= self.service_times.pop(parcel.id)
                 if feed.current_parcels:
                     discharge_time = timedelta(seconds=feed.current_parcels[0][1])
                     next_parcel = feed.current_parcels[0][0]
@@ -301,8 +324,6 @@ class PosiSorterSystem:
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
-        success_rate = ((len(parcels) - self.recirculated_count) / len(parcels)) * 100
-        print(f"Sorting success rate (no recirculation): {success_rate:.2f}%")
         print(f"Run time: {end - start}")
 
 
@@ -312,18 +333,13 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xls = pd.ExcelFile("PosiSorterData2.xlsx")
+    xlsx_path = r"PosiSorterData1.xlsx"
+    xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
 
     parcels_df, drop_info = clean_parcel_data(parcels_df)
     parcels, num_outfeeds = load_parcels_from_clean_df(parcels_df)
-    #Check if the data is clean.
-    no_outfeed_parcels = [p for p in parcels if not p.feasible_outfeeds]
-    print(f"Parcels with no feasible outfeeds: {len(no_outfeed_parcels)}")
-
-    for p in no_outfeed_parcels:
-        print(f"Parcel ID {p.id} has no feasible outfeeds.")
 
     # 2. INITIALIZE & (OPTIONALLY) TRAIN / LOAD ML MODEL
     #    ───────────────────────────────────────────────────────────────────────
@@ -345,9 +361,10 @@ def main():
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
     
-    #sorting_algo = fcfs
-    sorting_algo = genetic
+    # sorting_algo = fcfs
+    # sorting_algo = genetic
     #sorting_algo = mlfs
+    sorting_algo = load_balance
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
