@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
-from sorting_algorithms import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance
+from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance
 import math
 from collections import deque
 
@@ -77,6 +77,7 @@ class Parcel:
         self.recirculated = False
         self.outfeed_attempts = []  
         self.recirculation_count = 0  
+        self.sorted_first_try = False
 
     def get_volume(self) -> float: 
         return self.length * self.width * self.height
@@ -286,6 +287,8 @@ class PosiSorterSystem:
                 feed = self.outfeeds[k]
                 parcel = evt.parcel
                 wall_clock = (t0 + evt.time).time()
+                if parcel.recirculation_count == 0:
+                    parcel.sorted_first_try = True
                 print(f"[{wall_clock}] Parcel {parcel.id} removed from outfeed {k}")
 
                 feed.update(feed.time_until_next_discharge)
@@ -324,6 +327,9 @@ class PosiSorterSystem:
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
+        print(f"Sorting success rate: (incl. recirculation) {((len(parcels) - self.non_sorted_parcels)  / len(parcels) * 100):.2f}% ")
+        sorted_first_try_count = sum(1 for p in parcels if p.sorted_first_try)
+        print(f"Sorting success rate (on first try): {( sorted_first_try_count / len(parcels) * 100):.2f}% ")
         print(f"Run time: {end - start}")
 
 
@@ -333,7 +339,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData1.xlsx"
+    xlsx_path = pd.ExcelFile("PosiSorterData1.xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
