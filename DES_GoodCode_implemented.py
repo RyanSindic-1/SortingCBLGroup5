@@ -330,7 +330,7 @@ class PosiSorterSystem:
         print(f"Sorting success rate: (incl. recirculation) {((len(parcels) - self.non_sorted_parcels)  / len(parcels) * 100):.2f}% ")
         sorted_first_try_count = sum(1 for p in parcels if p.sorted_first_try)
         print(f"Sorting success rate (on first try): {( sorted_first_try_count / len(parcels) * 100):.2f}% ")
-        print(f"Run time: {end - start}")
+        print(f"Run time: {(end - start): .4f} seconds")
 
 
 # -------------------------------------------------------------------------- #
@@ -367,10 +367,10 @@ def main():
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
     
-    # sorting_algo = fcfs
-    # sorting_algo = genetic
+    sorting_algo = fcfs
+    #sorting_algo = genetic
     #sorting_algo = mlfs
-    sorting_algo = load_balance
+    # sorting_algo = load_balance
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
