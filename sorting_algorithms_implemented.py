@@ -293,11 +293,7 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
     return best_individual
 
 
-# ── NEW: MACHINE-LEARNING-BASED “FIRST SERVE” ──────────────────────────────────────
 
-# We’ll create a single global instance of OutfeedML. In practice, you might
-# want to load a saved model from disk (e.g. “outfeed_model.pkl”). For now, 
-# we leave `ml_model` un-trained until `main.py` calls its `.fit(...)`.
 ml_model: OutfeedML = None
 
 def initialize_ml_model(model_path: str = None):
@@ -313,18 +309,41 @@ def initialize_ml_model(model_path: str = None):
     return ml_model
 
 
+from collections import deque
+
 def mlfs(parcel) -> deque[int]:
     """
-    “Machine-Learning First Serve”:
-      1. We assume `ml_model` has already been `.fit(...)` or loaded.
-      2. We compute one predicted outfeed ID via `ml_model.predict(parcel)`.
-      3. We return a deque with exactly that one ID. 
-         If that outfeed is full, your simulation logic will pop it,
-         see it's full, then attempt next from `parcel.outfeed_attempts` (which
-         came from parcel.feasible_outfeeds), and eventually recirculate if needed.
+    Machine-Learning First Serve:
+      1. Predict one outfeed via ml_model.predict(parcel).
+      2. If that ID is in parcel.feasible_outfeeds, try it first, then the rest.
+      3. If not, fall back to the full feasible list.
+      4. If feasible list is empty, rank all channels by ml_model.predict_proba(parcel),
+         update parcel.feasible_outfeeds to that ranking, and return it.
     """
     if ml_model is None or not ml_model.is_trained:
-        raise RuntimeError("ml_model not initialized or not trained. Call initialize_ml_model(...) and then .fit(...) before using mlfs().")
+        raise RuntimeError(
+            "ml_model not initialized or not trained. "
+            "Call initialize_ml_model(...) and then .fit(...) before using mlfs()."
+        )
 
-    chosen = ml_model.predict(parcel)  # single int
-    return deque([chosen])
+    chosen = ml_model.predict(parcel)
+    feas = parcel.feasible_outfeeds
+
+    # 1) If there *are* feasible channels, use them
+    if feas:
+        if chosen in feas:
+            rest = [f for f in feas if f != chosen]
+            return deque([chosen] + rest)
+        return deque(feas)
+
+    # 2) No feasible channels: rank *all* channels by predicted probability
+    proba = ml_model.predict_proba(parcel)      # e.g. array([0.1, 0.7, 0.2])
+    classes = ml_model.clf.classes_            # e.g. array([0,1,2])
+    # Sort (probability, class) pairs descending, extract class IDs
+    ranked = [c for _, c in sorted(zip(proba, classes), key=lambda x: -x[0])]
+
+    # **Key fix:** update the parcel’s feasible_outfeeds so simulate() can
+    # safely do `feasible_outfeeds[-1]` later.
+    parcel.feasible_outfeeds = ranked
+
+    return deque(ranked)

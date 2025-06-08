@@ -339,7 +339,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile("PosiSorterData1.xlsx")
+    xlsx_path = pd.ExcelFile("PosiSorterData2.xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -359,18 +359,23 @@ def main():
         example_parcels = random.sample(parcels, min(len(parcels), 200))
         X_train = [ml.parcel_to_features(p) for p in example_parcels]
         # For labels, let’s pretend “true” outfeed = the first feasible_outfeed for each parcel:
-        y_train = [p.feasible_outfeeds[0] for p in example_parcels]
+        raw_sample = random.sample(parcels, min(len(parcels), 200))
+        # Keep only those with nonempty feasible list
+        example_parcels = [p for p in raw_sample if p.feasible_outfeeds]
+        y_train          = [p.feasible_outfeeds[0] for p in example_parcels]
+        if not example_parcels:
+            raise RuntimeError("All sampled parcels lack feasible_outfeeds; aborting ML training.")
         ml.fit(example_parcels, y_train)
-        # Optionally: ml.save("outfeed_model.pkl")
+
 
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
     
-    sorting_algo = fcfs
+    #sorting_algo = fcfs
     #sorting_algo = genetic
     #sorting_algo = mlfs
-    # sorting_algo = load_balance
+    #sorting_algo = load_balance
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
