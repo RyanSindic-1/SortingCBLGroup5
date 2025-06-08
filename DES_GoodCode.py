@@ -143,6 +143,7 @@ class Parcel:
         self.recirculated = False
         self.outfeed_attempts = []  # Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
         self.recirculation_count = 0  # Used to keep track of the number of recirculations of each parcel so that we can cap it at 3
+        self.sorted_first_try = False
 
     def get_volume(self) -> float: 
         """
@@ -385,6 +386,8 @@ class PosiSorterSystem:
                 parcel = evt.parcel
 
                 wall_clock = (t0 + evt.time).time()
+                if parcel.recirculation_count == 0:
+                    parcel.sorted_first_try = True
                 print(f"[{wall_clock}] Parcel {parcel.id} removed from outfeed {k}")
                 # remove the parcel that just left; add the next discharge event if any
                 feed.update(feed.time_until_next_discharge)         # knocks the head parcel out
@@ -430,6 +433,9 @@ class PosiSorterSystem:
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
         print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
+        print(f"Sorting success rate: (incl. recirculation) {((len(parcels) - self.non_sorted_parcels)  / len(parcels) * 100):.2f}% ")
+        sorted_first_try_count = sum(1 for p in parcels if p.sorted_first_try)
+        print(f"Sorting success rate (on first try): {( sorted_first_try_count / len(parcels) * 100):.2f}% ")
         print(f"Run time: {end - start}")
 # -------------------------------------------------------------------------- #
 # RUN SIMUALTION                                                             #
