@@ -94,7 +94,7 @@ def load_parcels_from_clean_df(df) -> list:
         width = float(row['Width'])                             # Width of package
         height = float(row['Height'])                           # Height of package
         weight = float(row['Weight'])                           # Weight of package
-        feasible_outfeeds = [i for i, flag in enumerate([row['Outfeed 1'], row['Outfeed 2'], row['Outfeed 3']]) if flag] # Feasible outfeeds
+        feasible_outfeeds = [i for i, col in enumerate(outfeed_columns) if row[col]] # Feasible outfeeds # Feasible outfeeds
         parcels.append(Parcel(parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds))
     return sorted(parcels, key=lambda p: p.arrival_time), num_outfeeds
 
