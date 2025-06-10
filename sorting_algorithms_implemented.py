@@ -85,7 +85,7 @@ def handle_enter_scanner_time(self, evt, fes):
     based on the current state of the outfeeds and the parcels in the sliding window.
     """
 
-    from DES_GoodCode import Event
+    from DES_GoodCode_implemented import Event
 
     p = evt.parcel
 
@@ -120,36 +120,34 @@ def handle_enter_scanner_time(self, evt, fes):
         dt_gate = timedelta(seconds=dt)
         fes.add(Event(Event.ENTER_OUTFEED, t + dt_gate, p, outfeed_id=k0))
 
-def greedy(p, loads, outfeeds):
+def load_balance_time(parcel):
+    """
+    Marker function: when main.py sees sorting_algorithm == load_balance, it delegates
+    to handle_enter_scanner(...) instead of FCFS/genetic/MLFS.
+    The body can be empty or return None.
+    """
+    return None
+
+def greedy_length(self, p):
     """
     Initial assignment: choose feasible outfeed with minimal tracked load.
 
-    Parameters:
-    - p: Parcel instance with attributes `feasible_outfeeds` and `length`.
-    - loads: dict mapping outfeed index to current tracked load.
-    - outfeeds: list of Outfeed instances with attribute `max_length`.
-
-    Returns:
-    - index of chosen outfeed, or None if no feasible outfeed.
+    Returns the index of the chosen outfeed, or None if no feasible outfeed can accept the parcel right now.
     """
-    feas = [
-        k
-        for k in p.feasible_outfeeds
-        if loads[k] + p.length <= outfeeds[k].max_length
-    ]
+    feas = [k for k in p.feasible_outfeeds if (self.outfeeds[k].can_accept(p))]
     if not feas:
         return None
-    return min(feas, key=lambda k: loads[k])
+    return min(feas, key=lambda k: self.loads[k])
 
 
-def imbalance(loads):
+def imbalance_length(self, loads_l):
     """
     Compute objective: spread between heaviest and lightest load.
     """
-    return max(loads.values()) - min(loads.values())
+    return max(loads_l.values()) - min(loads_l.values())
 
 
-def run_local_search(window, loads, outfeeds, assignment, max_iters=100):
+def run_local_search_length(self, max_iters=100):
     """
     Hill-climbing to refine assignments in a sliding window.
 
@@ -162,77 +160,77 @@ def run_local_search(window, loads, outfeeds, assignment, max_iters=100):
 
     Updates `assignment` in-place to the improved assignments.
     """
-    # Copy loads for local search
-    local_loads = loads.copy()
-    # Initialize assignment for window
-    assign_w = {}
-    for p in window:
-        k = greedy(p, local_loads, outfeeds)
-        assign_w[p.id] = k
+    # Hill-climbing to refine assignments in the sliding window
+    loads_l = self.loads_l.copy()
+    assign_wl = {}
+    # Baseline: assign any unassigned parcels in window greedily
+    for (_, p) in self.window:
+        k = greedy_length(self, p)
+        assign_wl[p.id] = k
         if k is not None:
-            local_loads[k] += p.length
+            loads_l[k] += p.length
 
-    # Hill-climbing loop
+    # Iteratively try moves that reduce imbalance
     for _ in range(max_iters):
         improved = False
-        for p in window:
-            current = assign_w[p.id]
+        for (_, p) in self.window:
+            cur = assign_wl[p.id]
             for k in p.feasible_outfeeds:
-                if k == current or local_loads[k] + p.length > outfeeds[k].max_length:
+                if k == cur or loads_l[k] + p.length > self.outfeeds[k].max_length:
                     continue
-                # simulate move
-                new_loads = local_loads.copy()
-                if current is not None:
-                    new_loads[current] -= p.length
-                new_loads[k] += p.length
-                if imbalance(new_loads) < imbalance(local_loads):
-                    # accept move
-                    local_loads = new_loads
-                    assign_w[p.id] = k
+                new_loads_l = loads_l.copy()
+                if cur is not None:
+                    new_loads_l[cur] -= p.length
+                new_loads_l[k] += p.length
+                if imbalance_length(self, new_loads_l) < imbalance_length(self, loads_l):
+                    loads_l, assign_wl[p.id] = new_loads_l, k
                     improved = True
                     break
             if improved:
                 break
         if not improved:
             break
+    # Commit improved assignments
+    for pid, k in assign_wl.items():
+        self.assignment[pid] = k
 
-    # Commit improved assignments back to system-wide assignment
-    for pid, new_k in assign_w.items():
-        assignment[pid] = new_k
 
-
-def handle_enter_scanner(self, evt, fes):
-        p = evt.parcel
+def handle_enter_scanner_length(self, evt, fes):
         
-        k0 = greedy(self, p)
-        self.assignment[p.id] = k0
-        if k0 is None:
-            # If it can fit but all channels are currently “full,” record first‐pass failure and schedule a recirculation below.
-            self.first_pass_failures.add(p.id)
+    from DES_GoodCode_implemented import Event
 
-        # Update the sliding window with the current time and parcel
-        self.window.append((evt.time, p))
-        while self.window and (evt.time - self.window[0][0] > self.WINDOW_DURATION):
-            self.window.popleft()
+    p = evt.parcel
+    # 1) greedy assign
+    k0 = greedy_length(self, p)
+    self.assignment[p.id] = k0
+    # track failure on first pass
+    if k0 is None:
+        self.first_pass_failures.add(p.id)
+    # 2) Append (arrival_time, p) to sliding window and evict old entries
+    self.window.append((evt.time, p))
+    while self.window and (evt.time - self.window[0][0] > self.WINDOW_DURATION):
+        self.window.popleft()
+    
+    # 3) Every REBALANCE_INTERVAL arrivals, run local search
+    self.rebal_ctr += 1
+    if self.rebal_ctr >= self.REBALANCE_INTERVAL:
+        run_local_search_length(self)
+        self.rebal_ctr = 0
 
-        self.rebal_ctr += 1
-        if self.rebal_ctr >= self.REBALANCE_INTERVAL:
-            self.run_local_search()
-            self.rebal_ctr = 0
-
-        # If we have a feasible outfeed, schedule the parcel to enter it
-        t = evt.time
-        if k0 is None:
-            # It can physically fit on some outfeed eventually, but none are open right now.
-            self.recirculated_count += 1
-            dt = (self.d_sc_of + self.d_between * self.num_outfeeds) / self.belt_speed
-            fes.add(Event(Event.RECIRCULATE, t + dt, p))
-        else:
-            # Schedule the time it takes to travel from scanner to the chosen outfeed gate
-            dt = (self.d_sc_of + k0 * self.d_between) / self.belt_speed
-            fes.add(Event(Event.ENTER_OUTFEED, t + dt, p, outfeed_id=k0))
+    # 4) schedule
+    t = evt.time
+    if k0 is None:
+        # Recirculate: schedule ENTER_SCANNER again after full loop back time
+        self.recirculated_count += 1
+        dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
+        fes.add(Event(Event.RECIRCULATE, t + dt, p))
+    else:
+        # Schedule ENTER_OUTFEED: travel time from scanner to gate final_k
+        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds / self.belt_speed))
+    
+        fes.add(Event(Event.ENTER_OUTFEED, t + dt, p, outfeed_id=k0))
         
-def load_balance(parcel):
+def load_balance_length(parcel):
     """
     Marker function: when main.py sees sorting_algorithm == load_balance, it delegates
     to handle_enter_scanner(...) instead of FCFS/genetic/MLFS.
@@ -293,7 +291,11 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
     return best_individual
 
 
+# ── NEW: MACHINE-LEARNING-BASED “FIRST SERVE” ──────────────────────────────────────
 
+# We’ll create a single global instance of OutfeedML. In practice, you might
+# want to load a saved model from disk (e.g. “outfeed_model.pkl”). For now, 
+# we leave `ml_model` un-trained until `main.py` calls its `.fit(...)`.
 ml_model: OutfeedML = None
 
 def initialize_ml_model(model_path: str = None):
@@ -309,41 +311,18 @@ def initialize_ml_model(model_path: str = None):
     return ml_model
 
 
-from collections import deque
-
 def mlfs(parcel) -> deque[int]:
     """
-    Machine-Learning First Serve:
-      1. Predict one outfeed via ml_model.predict(parcel).
-      2. If that ID is in parcel.feasible_outfeeds, try it first, then the rest.
-      3. If not, fall back to the full feasible list.
-      4. If feasible list is empty, rank all channels by ml_model.predict_proba(parcel),
-         update parcel.feasible_outfeeds to that ranking, and return it.
+    “Machine-Learning First Serve”:
+      1. We assume `ml_model` has already been `.fit(...)` or loaded.
+      2. We compute one predicted outfeed ID via `ml_model.predict(parcel)`.
+      3. We return a deque with exactly that one ID. 
+         If that outfeed is full, your simulation logic will pop it,
+         see it's full, then attempt next from `parcel.outfeed_attempts` (which
+         came from parcel.feasible_outfeeds), and eventually recirculate if needed.
     """
     if ml_model is None or not ml_model.is_trained:
-        raise RuntimeError(
-            "ml_model not initialized or not trained. "
-            "Call initialize_ml_model(...) and then .fit(...) before using mlfs()."
-        )
+        raise RuntimeError("ml_model not initialized or not trained. Call initialize_ml_model(...) and then .fit(...) before using mlfs().")
 
-    chosen = ml_model.predict(parcel)
-    feas = parcel.feasible_outfeeds
-
-    # 1) If there *are* feasible channels, use them
-    if feas:
-        if chosen in feas:
-            rest = [f for f in feas if f != chosen]
-            return deque([chosen] + rest)
-        return deque(feas)
-
-    # 2) No feasible channels: rank *all* channels by predicted probability
-    proba = ml_model.predict_proba(parcel)      # e.g. array([0.1, 0.7, 0.2])
-    classes = ml_model.clf.classes_            # e.g. array([0,1,2])
-    # Sort (probability, class) pairs descending, extract class IDs
-    ranked = [c for _, c in sorted(zip(proba, classes), key=lambda x: -x[0])]
-
-    # **Key fix:** update the parcel’s feasible_outfeeds so simulate() can
-    # safely do `feasible_outfeeds[-1]` later.
-    parcel.feasible_outfeeds = ranked
-
-    return deque(ranked)
+    chosen = ml_model.predict(parcel)  # single int
+    return deque([chosen])

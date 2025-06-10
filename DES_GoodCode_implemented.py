@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
-from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance
+from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, load_balance_length
 import math
 from collections import deque
 
@@ -176,6 +176,8 @@ class PosiSorterSystem:
         # ─── LOAD‐BALANCING STATE ───────────────────────────────────────────────
         # track “sum of service times” on each channel
         self.loads = {k: 0.0 for k in range(self.num_outfeeds)}
+        # track "load of the total lenght in each outfeed"
+        self.loads_l = {k: 0.0 for k in range(self.num_outfeeds)}
         # track service times of parcels (parcel.id → service_time)
         self.service_times = {}
         # track which outfeed each parcel was assigned to (parcel.id → outfeed_id)
@@ -221,9 +223,11 @@ class PosiSorterSystem:
             elif evt.type == Event.ENTER_SCANNER:
                 parcel = evt.parcel
 
-                # If “load_balance” is chosen as the sorting_algorithm, jump to LB code:
-                if self.sorting_algorithm is load_balance:
+                # If “load_balance” is chosen as the sorting_algorithm, jump to Load balancing code. You can choose between length based ot time based load balancing:
+                if self.sorting_algorithm is load_balance_time:
                     handle_enter_scanner_time(self, evt, fes)
+                elif self.sorting_algorithm is load_balance_length:
+                    handle_enter_scanner_length(self, evt, fes)
                 else:
                     # Otherwise, run the other chosen sorting algorithm:
                     choice = self.sorting_algorithm(parcel)
@@ -339,7 +343,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile("PosiSorterData2.xlsx")
+    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -375,7 +379,8 @@ def main():
     #sorting_algo = fcfs
     #sorting_algo = genetic
     #sorting_algo = mlfs
-    #sorting_algo = load_balance
+    sorting_algo = load_balance_time
+    #sorting_algo = load_balance_length
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
