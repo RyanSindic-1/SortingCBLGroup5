@@ -172,7 +172,7 @@ class PosiSorterSystem:
         self.recirculated_count = 0
         self.outfeed_counts = [0] * self.num_outfeeds
         self.non_sorted_parcels = 0
-
+    
         # ─── LOAD‐BALANCING STATE ───────────────────────────────────────────────
         # track “sum of service times” on each channel
         self.loads = {k: 0.0 for k in range(self.num_outfeeds)}
@@ -190,7 +190,9 @@ class PosiSorterSystem:
         self.rebal_ctr = 0
         # record parcels that had to recirculate because no outfeed was free “this round”
         self.first_pass_failures = set()
-
+    def handle(self, evt):
+        pass
+    
     def simulate(self, parcels) -> None:
         fes = FES()
         t = timedelta(0)
@@ -212,6 +214,7 @@ class PosiSorterSystem:
         while not fes.isEmpty():
             tOld = t
             evt = fes.next()
+            self.handle(evt)
             t = evt.time
 
             if evt.type == Event.ARRIVAL:
@@ -343,7 +346,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx")
+    xlsx_path = pd.ExcelFile(r"PosiSorterData_O50.xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -378,8 +381,8 @@ def main():
     
     #sorting_algo = fcfs
     #sorting_algo = genetic
-    #sorting_algo = mlfs
-    sorting_algo = load_balance_time
+    sorting_algo = mlfs
+    #sorting_algo = load_balance_time
     #sorting_algo = load_balance_length
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)

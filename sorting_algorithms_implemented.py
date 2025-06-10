@@ -3,6 +3,7 @@
 from collections import deque
 import random
 from datetime import timedelta
+import numpy as np
 
 # ── IMPORT THE NEW ML MODULE ────────────────────────────────────────────────────
 from ml_sorting import OutfeedML
@@ -311,18 +312,41 @@ def initialize_ml_model(model_path: str = None):
     return ml_model
 
 
+
+
 def mlfs(parcel) -> deque[int]:
     """
-    “Machine-Learning First Serve”:
-      1. We assume `ml_model` has already been `.fit(...)` or loaded.
-      2. We compute one predicted outfeed ID via `ml_model.predict(parcel)`.
-      3. We return a deque with exactly that one ID. 
-         If that outfeed is full, your simulation logic will pop it,
-         see it's full, then attempt next from `parcel.outfeed_attempts` (which
-         came from parcel.feasible_outfeeds), and eventually recirculate if needed.
+    ML-First-Serve with confidence threshold:
+      1. If top prediction p>=threshold and feasible, try it first.
+      2. Else if parcel.feasible_outfeeds nonempty, fall back to that list.
+      3. Else rank all gates by ML probability, update feasible_outfeeds, and return.
     """
     if ml_model is None or not ml_model.is_trained:
-        raise RuntimeError("ml_model not initialized or not trained. Call initialize_ml_model(...) and then .fit(...) before using mlfs().")
+        raise RuntimeError(
+            "ml_model not initialized or not trained. "
+            "Call initialize_ml_model(...) and then .fit(...) before using mlfs()."
+        )
 
-    chosen = ml_model.predict(parcel)  # single int
-    return deque([chosen])
+    # Extract probabilities and class labels
+    feats   = ml_model.parcel_to_features(parcel).reshape(1, -1)
+    proba   = ml_model.clf.predict_proba(feats)[0]   # e.g. [0.1,0.7,0.2]
+    classes = ml_model.clf.classes_                 # e.g. [0,1,2]
+
+    # Identify top class and its confidence
+    idx_max = int(np.argmax(proba))
+    p_max   = proba[idx_max]
+    feas    = list(parcel.feasible_outfeeds)
+
+    # 1) High-confidence & feasible → prioritized first
+    if p_max >= ml_model.threshold and idx_max in feas:
+        rest = [f for f in feas if f != idx_max]
+        return deque([idx_max] + rest)
+
+    # 2) Fallback to mechanical feasibility list
+    if feas:
+        return deque(feas)
+
+    # 3) No mechanical options → rank all gates by descending prob
+    ranked = [c for _, c in sorted(zip(proba, classes), key=lambda x: -x[0])]
+    parcel.feasible_outfeeds = ranked
+    return deque(ranked)

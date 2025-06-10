@@ -1,15 +1,16 @@
 # generate_readouts.py
 
 import pandas as pd
-from DES_GoodCode import (            # adjust this to your module name
+from DES_GoodCode_implemented import (            # adjust to your module name
     clean_parcel_data,
     load_parcels_from_clean_df,
     PosiSorterSystem,
     Event,
 )
+from sorting_algorithms_implemented import fcfs # pick your algorithm
 
 def main():
-    EXCEL = "PosiSorterData1.xlsx"
+    EXCEL = "PosiSorterData2.xlsx"
 
     # 1) Read in raw sheets
     xls        = pd.ExcelFile(EXCEL)
@@ -17,35 +18,42 @@ def main():
     layout_df  = xls.parse("Layout")
 
     # 2) Clean & build Parcel objects
-    parcels_df, drop_info = clean_parcel_data(parcels_df)
-    parcels               = load_parcels_from_clean_df(parcels_df)
+    parcels_df, drop_info       = clean_parcel_data(parcels_df)
+    parcels, num_outfeeds       = load_parcels_from_clean_df(parcels_df)
 
-    # 3) Instantiate & grab number of outfeeds
-    system    = PosiSorterSystem(layout_df)
-    n_out     = system.num_outfeeds
+    # 3) Instantiate system
+    system = PosiSorterSystem(
+        layout_df,
+        num_outfeeds,
+        sorting_algorithm=fcfs,
+    )
 
-    # 4) Monkey-patch a handler to log every event
+    # 4) Monkey‐patch a handler to log every event
     event_log = []
-    orig_handle = getattr(system, "handle", None)
+    # Capture the original bound method once:
+    orig_handle = system.handle
+
     def handle_and_log(evt):
+        # 4a) Log it
         event_log.append({
             "parcel_id":  evt.parcel.id,
             "event":      evt.type,
             "time":       evt.time,
             "outfeed_id": getattr(evt, "outfeed_id", None),
         })
-        if orig_handle:
-            orig_handle(evt)
+        # 4b) Call the original (no-op) handler so we don't lose any logic
+        orig_handle(evt)
 
+    # Override the instance method
     system.handle = handle_and_log
 
-    # 5) Run the simulation (make sure simulate() calls self.handle(evt))
+    # 5) Run the simulation
     system.simulate(parcels)
 
-    # 6) Dump events.csv (with num_outfeeds column)
+    # 6) Dump CSVs as before...
     if event_log:
         ev_df = pd.DataFrame(event_log)
-        ev_df["num_outfeeds"] = n_out
+        ev_df["num_outfeeds"] = num_outfeeds
         ev_df["event_name"]   = ev_df["event"].map({
             Event.ARRIVAL:       "Arrival",
             Event.ENTER_SCANNER: "EnterScanner",
@@ -56,7 +64,7 @@ def main():
         ev_df.to_csv("events.csv", index=False)
         print(f"Wrote events.csv ({len(ev_df)} rows)")
 
-        # 7) Build parcel_summary.csv (also with num_outfeeds)
+        # Parcel‐level summary...
         summary = []
         for pid, grp in ev_df.groupby("parcel_id"):
             times = grp.set_index("event_name")["time"]
@@ -69,7 +77,7 @@ def main():
                 "recirculations": max(0,
                     grp[grp["event"] == Event.ENTER_SCANNER].shape[0] - 1
                 ),
-                "num_outfeeds":  n_out,
+                "num_outfeeds":  num_outfeeds,
             })
         sum_df = pd.DataFrame(summary)
         sum_df.to_csv("parcel_summary.csv", index=False)
