@@ -114,7 +114,7 @@ class Outfeed:
     """
     A class to represent the outfeed.
     """
-    def __init__(self, max_length=3.0) -> None:
+    def __init__(self, max_length: float) -> None:
         self.max_length = max_length
         self.current_parcels = []
         self.current_length = 0.0
@@ -156,6 +156,11 @@ class PosiSorterSystem:
         self.dist_between_outfeeds     = layout_df.loc[
             layout_df['Layout property'] == 'Distance between Outfeeds', 'Value'
         ].values[0]
+        outfeed_lengths = (
+        layout_df[layout_df["Layout property"].str.startswith("Length outfeed")]
+        .sort_values("Layout property")["Value"]
+        .tolist()
+)
 
         possible_keys = ["Distance Outfeeds to Infeeds", "Distance Infeeds to Arrival"]
         match = layout_df[layout_df['Layout property'].isin(possible_keys)]
@@ -165,7 +170,8 @@ class PosiSorterSystem:
             self.dist_outfeeds_to_infeeds = None
 
         self.num_outfeeds = num_outfeeds
-        self.outfeeds = [Outfeed(max_length=4.5) for _ in range(self.num_outfeeds)]
+        # self.outfeeds = [Outfeed(max_length=4.5) for _ in range(self.num_outfeeds)]
+        self.outfeeds = [Outfeed(max_length=outfeed_lengths[k]) for k in range(self.num_outfeeds)]
         self.sorting_algorithm = sorting_algorithm
 
         # For statistics
@@ -350,7 +356,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\PosiSorterData2(1).xlsx")
+    xlsx_path = pd.ExcelFile("PosiSorterData2.xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -386,8 +392,8 @@ def main():
     #sorting_algo = fcfs
     #sorting_algo = genetic
     #sorting_algo = mlfs
-    sorting_algo = load_balance_time
-    #sorting_algo = load_balance_length
+    #sorting_algo = load_balance_time
+    sorting_algo = load_balance_length
 
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
