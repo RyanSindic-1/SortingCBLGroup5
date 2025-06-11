@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
-from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, load_balance_length
+from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, load_balance_length, greedy_time, greedy_length
 import math
 from collections import deque
 
@@ -34,102 +34,38 @@ class Event:
     EXIT_OUTFEED = 3 
     RECIRCULATE = 4
 
-    def __init__(self, typ, time, parcel, outfeed_id = None) -> None:  # type is a reserved word
-        """
-        Initializes the attributes for the parcel class. 
-        :param typ: what type of event it is, e.g, Arrival, scanner...
-        :param time: at what time the event occurs
-        :param parcel: all the information of the parcel that is being processed
-        :param outfeed_id: the outfeed to which the parcel goes. It is an optional parameter since it is only needed for events 2 and 3.
-        """
+    def __init__(self, typ, time, parcel, outfeed_id = None) -> None:
         self.type = typ
         self.time = time
         self.parcel = parcel
-        self.outfeed_id = outfeed_id  # Only used for ENTER_OUTFEED and EXIT_OUTFEED events
-
+        self.outfeed_id = outfeed_id
 
     def __lt__(self, other) -> bool:
-        """
-        Compares this object with another object based on the 'time' attribute.
-        :param other: Another thing in the class to compare with.
-        :return: True if this object's time is less than the other object's time, False otherwise.
-        """
         return self.time < other.time
 
 
 class FES:
     """
-    A class that represents a Future Event Set (FES) for discrete event simulation.
-    This class uses a priority queue to manage events in the simulation.
-    Events are sorted by their time attribute, which is a float.
-
-    ...
-
-    Methods
-    -------
-    def add(self, event) -> None:
-        Adds an event to the Future Event Set
-    
-    def next(self) -> Event:
-        Retrieves and removes the next event from the Future Event Set.
-    
-    def isEmpty(self) -> bool:
-        Checks if the the Future Event Set is empty.
+    Future Event Set implemented as a min-heap of Event objects.
     """
-
     def __init__(self) -> None:
-        """
-        Initializes the attribute for the FES class.
-        """
         self.events = []
 
     def add(self, event) -> None:
-        """
-        Adds an event to the Future Event Set.
-        """
         heapq.heappush(self.events, event)
 
     def next(self) -> Event:
-        """
-        Retrieves and removes the next event from the Future Event Set.
-        :return: the next event from the Future Event Set.
-        """
         return heapq.heappop(self.events)
 
     def isEmpty(self) -> bool:
-        """
-        Checks if the the Future Event Set is empty.
-        :return: True if the set is empty, False otherwise.
-        """
         return len(self.events) == 0
 
 
 class Parcel:
     """
     A class to represent a parcel. 
-
-    ...
-    
-    Methods 
-    -------
-    get_volume(self) -> float:
-        Calculates the volume of the parcel
-
-    compute_outfeed_time(parcel) -> float:
-        Determines the amount of time it costs to get unloaded from the outfeed.
     """
-
     def __init__(self, parcel_id, arrival_time, length, width, height, weight, feasible_outfeeds) -> None:
-        """
-        Initializes the attributes for the parcel class. 
-        :param parcel_id: the parcel id number 
-        :param arrival_time: arrival time of the parcel
-        :param length: length of the parcel
-        :param width: width of the parcel
-        :param height: height of the parcel
-        :param weight: weight of the parcel
-        :param feasible_outfeeds: feasible outfeeds for each parcel
-        """
         self.id = parcel_id
         self.arrival_time = arrival_time
         self.length = length
@@ -139,24 +75,17 @@ class Parcel:
         self.feasible_outfeeds = feasible_outfeeds
         self.sorted = False
         self.recirculated = False
-        self.outfeed_attempts = []  # Afterwards, makes a copy of the feasible outfeeds of the parcel. Used for the algorithm functioning.
-        self.recirculation_count = 0  # Used to keep track of the number of recirculations of each parcel so that we can cap it at 3
+        self.outfeed_attempts = []  
+        self.recirculation_count = 0  
         self.sorted_first_try = False
 
-    def get_volume(self) -> float:
-        """
-        Calculates the volume of the parcel.
-        :return: The volume of the parcel.
-        """
+    def get_volume(self) -> float: 
         return self.length * self.width * self.height
 
 
 def compute_outfeed_time(parcel) -> float:
     """
-    Determines the amount of time it costs to get unloaded from the outfeed
-    based on the volume and weight of the parcel.
-    :param parcel: a parcel
-    :return: the time it takes for the parcel to get unloaded from the outfeed.
+    Determines the amount of time it costs to get unloaded from the outfeed.
     """
     base_time = 4.5
 
@@ -184,84 +113,37 @@ def compute_outfeed_time(parcel) -> float:
 class Outfeed:
     """
     A class to represent the outfeed.
-
-    ...
-
-    Methods
-    -------
-    can_accept(self, parcel) -> bool:
-        Determines if parcel can be accepted in an outfeed
-
-    add_parcel(self, parcel) -> None:
-        Adds parcel to certain outfeed
-
-    update(self, time_step, system_time) -> None:
-        Keeps track of all timings in the system.
     """
-
     def __init__(self, max_length=3.0) -> None:
-        """
-        Initializes the attributes for the parcel class. 
-        :param max_lentgh: the maximal length of an outfeed.
-        """
-        self.max_length = max_length            # Maximum length of the outfeed
-        self.current_parcels = []               # Stores the occupied length of the outfeed 
-        self.current_length = 0.0               # Current length set to 0 at start
-        self.time_until_next_discharge = 0.0    # Current waiting time, before parcel gets unloaded, set to 0 at start
+        self.max_length = max_length
+        self.current_parcels = []
+        self.current_length = 0.0
+        self.time_until_next_discharge = 0.0
 
     def can_accept(self, parcel) -> bool:
-        """
-        Determines if parcel can be accepted in a outfeed.
-        :param parcel: a parcel
-        :return: True if the parcel can be accepted, False otherwise.
-        """
         return self.current_length + parcel.length <= self.max_length
 
     def add_parcel(self, parcel) -> None:
-        """
-        Adds parcel to certain outfeed.
-        :param parcel: a parcel.
-        """
         self.current_parcels.append((parcel, compute_outfeed_time(parcel)))
         self.current_length += parcel.length
         if len(self.current_parcels) == 1:
-            # Timer for the current parcel
             self.time_until_next_discharge = self.current_parcels[0][1]
 
     def update(self, time_step) -> None:
-        """
-        Keeps track of all timings in the system. 
-        :param time_step: time step.
-        """
         if self.current_parcels:
             self.time_until_next_discharge -= time_step
             if self.time_until_next_discharge <= 0:
                 parcel, _ = self.current_parcels.pop(0)
                 self.current_length -= parcel.length
                 if self.current_parcels:
-                    # Timer for the next parcel in line
                     self.time_until_next_discharge = self.current_parcels[0][1]
 
 
 class PosiSorterSystem:
     """
-     A class to represent the outfeed.
-
-    ...
-
-    Methods
-    -------
-    def simulate(self, parcels) -> None:
-        Simulates the system.
+    A class to represent the sorter system. 
     """
-
     def __init__(self, layout_df, num_outfeeds, sorting_algorithm) -> None:
-        """
-        Initializes the attributes for the PosiSorterSystem class.
-        :param layout_df: layout sheet of excel file
-        :param num_outfeeds: the number of outfeeds 
-        :param sorting_alhgorithm: the sorting algorithm used.
-        """
         self.belt_speed                = layout_df.loc[
             layout_df['Layout property'] == 'Belt Speed', 'Value'
         ].values[0]
@@ -283,7 +165,7 @@ class PosiSorterSystem:
             self.dist_outfeeds_to_infeeds = None
 
         self.num_outfeeds = num_outfeeds
-        self.outfeeds = [Outfeed(max_length=3.0) for _ in range(self.num_outfeeds)]
+        self.outfeeds = [Outfeed(max_length=4.5) for _ in range(self.num_outfeeds)]
         self.sorting_algorithm = sorting_algorithm
 
         # For statistics
@@ -314,10 +196,6 @@ class PosiSorterSystem:
         pass
     
     def simulate(self, parcels) -> None:
-        """
-        Simulates the system.
-        :param parcels: parcels. 
-        """
         fes = FES()
         t = timedelta(0)
         t0 = parcels[0].arrival_time
@@ -510,6 +388,7 @@ def main():
     #sorting_algo = mlfs
     #sorting_algo = load_balance_time
     sorting_algo = load_balance_length
+
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)

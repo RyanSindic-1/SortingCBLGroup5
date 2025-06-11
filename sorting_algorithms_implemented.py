@@ -37,33 +37,46 @@ def run_local_search_time(self, max_iters=100):
     trying to minimize the imbalance between the outfeeds.
     max_iters is the maximum hill climbing iterations that will be performed.
     """
-    # Copy current loads and build a temporary assignment for the window
-    loads = self.loads.copy()
+    from DES_GoodCode_implemented import compute_outfeed_time
+
+    # 1) Start from current global loads (excluding future actuals)
+    time_loads = self.loads.copy()
+    length_loads = self.loads_l.copy()
     assign_w = {}
 
-    # Assign parcel to the outfeed with the minimal tracked load (greedy_time)
+    # 2) Initial greedy assignment using predicted service times
     for (_, p) in self.window:
+        st = compute_outfeed_time(p)
         k = greedy_time(self, p)
         assign_w[p.id] = k
         if k is not None:
-            loads[k] += self.service_times.get(p.id, 0.0)
+            time_loads[k]   += st
+            length_loads[k] += p.length
 
-    # Hill‐climb: try moving one parcel at a time to reduce imbalance
+    # 3) Hill-climb: try moving parcels to reduce time imbalance
     for _ in range(max_iters):
         improved = False
         for (_, p) in self.window:
             cur = assign_w[p.id]
+            st = compute_outfeed_time(p)
             for k in p.feasible_outfeeds:
-                if k == cur or not self.outfeeds[k].can_accept(p):
+                if k == cur:
                     continue
-                st = self.service_times.get(p.id, 0.0)
-                new_loads = loads.copy()
+                # enforce length capacity
+                if length_loads[k] + p.length > self.outfeeds[k].max_length:
+                    continue
+                # simulate move
+                new_time = time_loads.copy()
+                new_len  = length_loads.copy()
                 if cur is not None:
-                    new_loads[cur] -= st
-                new_loads[k] += st
-                if imbalance_time(self, new_loads) < imbalance_time(self, loads):
-                    # accept this move
-                    loads, assign_w[p.id] = new_loads, k
+                    new_time[cur]   -= st
+                    new_len[cur]    -= p.length
+                new_time[k]       += st
+                new_len[k]        += p.length
+                # accept if improves imbalance
+                if imbalance_time(self, new_time) < imbalance_time(self, time_loads):
+                    time_loads, length_loads = new_time, new_len
+                    assign_w[p.id] = k
                     improved = True
                     break
             if improved:
@@ -71,7 +84,9 @@ def run_local_search_time(self, max_iters=100):
         if not improved:
             break
 
-    # Commit assignments back into self.assignment
+    # 4) Commit back into system state
+    self.loads   = time_loads
+    self.loads_l = length_loads
     for pid, k in assign_w.items():
         self.assignment[pid] = k
 
@@ -162,37 +177,43 @@ def run_local_search_length(self, max_iters=100):
 
     Updates `assignment` in-place to the improved assignments.
     """
-    # Hill-climbing to refine assignments in the sliding window
-    loads_l = self.loads_l.copy()
+    # 1) copy current length loads and prepare assignment map
+    length_loads = self.loads_l.copy()
     assign_wl = {}
-    # Baseline: assign any unassigned parcels in window greedily
+
+    # 2) initial greedy assignment based on minimal length-load
     for (_, p) in self.window:
         k = greedy_length(self, p)
         assign_wl[p.id] = k
         if k is not None:
-            loads_l[k] += p.length
+            length_loads[k] += p.length
 
-    # Iteratively try moves that reduce imbalance
+    # 3) hill-climb to reduce max-min length imbalance
     for _ in range(max_iters):
         improved = False
         for (_, p) in self.window:
             cur = assign_wl[p.id]
             for k in p.feasible_outfeeds:
-                if k == cur or loads_l[k] + p.length > self.outfeeds[k].max_length:
+                # skip same or infeasible by length
+                if k == cur or length_loads[k] + p.length > self.outfeeds[k].max_length:
                     continue
-                new_loads_l = loads_l.copy()
+                # simulate move
+                new_loads = length_loads.copy()
                 if cur is not None:
-                    new_loads_l[cur] -= p.length
-                new_loads_l[k] += p.length
-                if imbalance_length(self, new_loads_l) < imbalance_length(self, loads_l):
-                    loads_l, assign_wl[p.id] = new_loads_l, k
+                    new_loads[cur] -= p.length
+                new_loads[k] += p.length
+                if imbalance_length(self, new_loads) < imbalance_length(self, length_loads):
+                    length_loads = new_loads
+                    assign_wl[p.id] = k
                     improved = True
                     break
             if improved:
                 break
         if not improved:
             break
-    # Commit improved assignments
+
+    # 4) commit updated loads and assignments
+    self.loads_l = length_loads
     for pid, k in assign_wl.items():
         self.assignment_l[pid] = k
 
