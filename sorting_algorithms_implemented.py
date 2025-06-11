@@ -268,28 +268,34 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
         """
         return 1 / (1 + outfeed_id)  # Lower index gets higher fitness
 
+    # Initial population
     population = [random.choice(feasible_outfeeds) for _ in range(population_size)]
-
+    
+    # Evaluate fitness
     for _ in range(generations):
         fitness_scores = [fitness(individual) for individual in population]
 
+    # Selection 
         selected = []
         for _ in range(population_size):
             i1, i2 = random.sample(range(population_size), 2)
             selected.append(population[i1] if fitness_scores[i1] > fitness_scores[i2] else population[i2])
 
+    # Crossover
         children = []
         for _ in range(population_size):
             p1, p2 = random.sample(selected, 2)
             child = random.choice([p1, p2])
             children.append(child)
 
+    # Mutation 
         for i in range(population_size):
             if random.random() < mutation_rate:
                 children[i] = random.choice(feasible_outfeeds)
 
         population = children
 
+    # Best solution 
     best_individual = max(population, key=fitness)
     return best_individual
 
