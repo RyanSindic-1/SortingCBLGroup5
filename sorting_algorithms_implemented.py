@@ -138,7 +138,7 @@ def greedy_length(self, p):
     feas = [k for k in p.feasible_outfeeds if (self.outfeeds[k].can_accept(p))]
     if not feas:
         return None
-    return min(feas, key=lambda k: self.loads[k])
+    return min(feas, key=lambda k: self.loads_l[k])
 
 
 def imbalance_length(self, loads_l):
@@ -193,7 +193,7 @@ def run_local_search_length(self, max_iters=100):
             break
     # Commit improved assignments
     for pid, k in assign_wl.items():
-        self.assignment[pid] = k
+        self.assignment_l[pid] = k
 
 
 def handle_enter_scanner_length(self, evt, fes):
@@ -203,7 +203,7 @@ def handle_enter_scanner_length(self, evt, fes):
     p = evt.parcel
     # 1) greedy assign
     k0 = greedy_length(self, p)
-    self.assignment[p.id] = k0
+    self.assignment_l[p.id] = k0
     # track failure on first pass
     if k0 is None:
         self.first_pass_failures.add(p.id)
@@ -227,7 +227,7 @@ def handle_enter_scanner_length(self, evt, fes):
         fes.add(Event(Event.RECIRCULATE, t + dt, p))
     else:
         # Schedule ENTER_OUTFEED: travel time from scanner to gate final_k
-        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds / self.belt_speed))
+        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
     
         fes.add(Event(Event.ENTER_OUTFEED, t + dt, p, outfeed_id=k0))
         

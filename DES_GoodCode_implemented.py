@@ -182,6 +182,8 @@ class PosiSorterSystem:
         self.service_times = {}
         # track which outfeed each parcel was assigned to (parcel.id → outfeed_id)
         self.assignment = {}
+
+        self.assignment_l = {}
     
         self.WINDOW_DURATION = timedelta(seconds=(self.dist_scanner_to_outfeeds / self.belt_speed))
         self.window = deque()
@@ -276,6 +278,7 @@ class PosiSorterSystem:
                 service_time = feed.current_parcels[-1][1]
                 self.service_times[parcel.id] = service_time
                 self.loads[k] += service_time
+                self.loads_l[k] += parcel.length
 
                 if len(feed.current_parcels) == 1:
                     theta = 25  # degrees
@@ -300,6 +303,7 @@ class PosiSorterSystem:
 
                 feed.update(feed.time_until_next_discharge)
                 self.loads[k] -= self.service_times.pop(parcel.id)
+                self.loads_l[k] -= parcel.length
                 if feed.current_parcels:
                     discharge_time = timedelta(seconds=feed.current_parcels[0][1])
                     next_parcel = feed.current_parcels[0][0]
@@ -346,7 +350,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile(r"PosiSorterData_O50.xlsx")
+    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\PosiSorterData2(1).xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -381,9 +385,9 @@ def main():
     
     #sorting_algo = fcfs
     #sorting_algo = genetic
-    sorting_algo = mlfs
+    #sorting_algo = mlfs
     #sorting_algo = load_balance_time
-    #sorting_algo = load_balance_length
+    sorting_algo = load_balance_length
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
