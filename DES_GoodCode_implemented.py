@@ -386,8 +386,8 @@ def main():
     #sorting_algo = fcfs
     #sorting_algo = genetic
     #sorting_algo = mlfs
-    #sorting_algo = load_balance_time
-    sorting_algo = load_balance_length
+    sorting_algo = load_balance_time
+    #sorting_algo = load_balance_length
 
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
