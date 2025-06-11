@@ -110,16 +110,17 @@ def handle_enter_scanner_time(self, evt, fes):
 
     # 4) Use (possibly rebalanced) assignment to schedule next step
     t = evt.time
-    if k0 is None:
+    final_k = self.assignment[p.id]
+    if final_k is None:
         # Recirculate: schedule ENTER_SCANNER again after full loop back time
         self.recirculated_count += 1
         dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
         fes.add(Event(Event.RECIRCULATE, t + dt, p))
     else:
         # Schedule ENTER_OUTFEED: travel time from scanner to gate final_k
-        dt = (self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed
+        dt = (self.dist_scanner_to_outfeeds + final_k * self.dist_between_outfeeds) / self.belt_speed
         dt_gate = timedelta(seconds=dt)
-        fes.add(Event(Event.ENTER_OUTFEED, t + dt_gate, p, outfeed_id=k0))
+        fes.add(Event(Event.ENTER_OUTFEED, t + dt_gate, p, outfeed_id=final_k))
 
 def load_balance_time(parcel):
     """
@@ -220,16 +221,17 @@ def handle_enter_scanner_length(self, evt, fes):
 
     # 4) schedule
     t = evt.time
-    if k0 is None:
+    final_k = self.assignment_l[p.id]
+    if final_k is None:
         # Recirculate: schedule ENTER_SCANNER again after full loop back time
         self.recirculated_count += 1
         dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
         fes.add(Event(Event.RECIRCULATE, t + dt, p))
     else:
         # Schedule ENTER_OUTFEED: travel time from scanner to gate final_k
-        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
+        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + final_k * self.dist_between_outfeeds) / self.belt_speed)
     
-        fes.add(Event(Event.ENTER_OUTFEED, t + dt, p, outfeed_id=k0))
+        fes.add(Event(Event.ENTER_OUTFEED, t + dt, p, outfeed_id=final_k))
         
 def load_balance_length(parcel):
     """
