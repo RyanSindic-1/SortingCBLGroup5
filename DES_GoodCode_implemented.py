@@ -5,7 +5,11 @@ import time
 import pandas as pd
 import random
 from datetime import timedelta 
-from sorting_algorithms_implemented import fcfs, genetic, initialize_ml_model, mlfs, handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, load_balance_length, greedy_time, greedy_length
+from sorting_algorithms_implemented import (fcfs, genetic, initialize_ml_model, mlfs, 
+handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, 
+load_balance_length, load_balance_length_simple, load_balance_time_simple, 
+handle_enter_scanner_length_simple, handle_enter_scanner_time_simple
+)
 import math
 from collections import deque
 
@@ -238,6 +242,10 @@ class PosiSorterSystem:
                     handle_enter_scanner_time(self, evt, fes)
                 elif self.sorting_algorithm is load_balance_length:
                     handle_enter_scanner_length(self, evt, fes)
+                elif self.sorting_algorithm is load_balance_length_simple:
+                    handle_enter_scanner_length_simple(self, evt, fes)
+                elif self.sorting_algorithm is load_balance_time_simple:
+                    handle_enter_scanner_time_simple(self, evt, fes)
                 else:
                     # Otherwise, run the other chosen sorting algorithm:
                     choice = self.sorting_algorithm(parcel)
@@ -363,7 +371,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile("PosiSorterData1.xlsx")
+    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -400,7 +408,9 @@ def main():
     #sorting_algo = genetic
     #sorting_algo = mlfs
     #sorting_algo = load_balance_time
-    sorting_algo = load_balance_length
+    #sorting_algo = load_balance_length
+    #sorting_algo = load_balance_length_simple
+    sorting_algo = load_balance_time_simple
 
 
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
@@ -413,7 +423,7 @@ def main():
     parcels_df_with_outfeed = parcels_df.copy()
     parcels_df_with_outfeed["Simulated Outfeed"] = outfeed_col
 
-    in_path  = "PosiSorterData1.xlsx"        # <─ plain string
+    in_path  = r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx"        # <─ plain string
     xls      = pd.ExcelFile(in_path)         # use for reading
     out_path = in_path.replace(
     ".xlsx", "_with_sim_outfeeds.xlsx")  # works because in_path is str

@@ -95,7 +95,7 @@ def handle_enter_scanner_time(self, evt, fes):
     """
     This function handles the ENTER_SCANNER event.
     It assigns the parcel to an outfeed based on a greedy strategy,
-    afthet that it updates the sliding window of recent parcels and performs local search
+    after that it updates the sliding window of recent parcels and performs local search
     for load balancing every REBALANCE_INTERVAL arrivals. What this means is that every certain number of parcels,
     we try to reassign parcels in the sliding window to minimize the load imbalance across outfeeds. The decision point of assigning a parcel is dynamic,
     based on the current state of the outfeeds and the parcels in the sliding window.
@@ -219,7 +219,8 @@ def run_local_search_length(self, max_iters=100):
 
 
 def handle_enter_scanner_length(self, evt, fes):
-        
+    """ This function handles the ENTER_SCANNER event for length-based load balancing with local search 
+    and basically does the same as handle_enter_scanner_time, but uses length instead of time for load balancing."""   
     from DES_GoodCode_implemented import Event
 
     p = evt.parcel
@@ -261,6 +262,46 @@ def load_balance_length(parcel):
     The body can be empty or return None.
     """
     return None
+
+def load_balance_time_simple(parcel):
+    """Marker: time-based load balancing without local search."""
+    return None
+
+def load_balance_length_simple(parcel):
+    """length-based load balancing without local search."""
+    return None
+
+def handle_enter_scanner_time_simple(self, evt, fes):
+    """ This function handles the ENTER_SCANNER event for time-based load balancing without local seaerch."""
+    from DES_GoodCode_implemented import Event
+
+    p = evt.parcel
+    # 1) Greedy op basis van huidige time-loads
+    k0 = greedy_time(self, p)
+    if k0 is None:
+        # Geen kanaal vrij → recirculatie
+        self.recirculated_count += 1
+        dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
+        fes.add(Event(Event.RECIRCULATE, evt.time + dt, p))
+    else:
+        # Plan direct naar ENTER_OUTFEED
+        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
+        fes.add(Event(Event.ENTER_OUTFEED, evt.time + dt, p, outfeed_id=k0))
+
+def handle_enter_scanner_length_simple(self, evt, fes):
+    """ This function handles the ENTER_SCANNER event for length-based load balancing without local seaerch."""
+    from DES_GoodCode_implemented import Event
+
+    p = evt.parcel
+    # 1) Greedy op basis van huidige length-loads
+    k0 = greedy_length(self, p)
+    if k0 is None:
+        self.recirculated_count += 1
+        dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
+        fes.add(Event(Event.RECIRCULATE, evt.time + dt, p))
+    else:
+        dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
+        fes.add(Event(Event.ENTER_OUTFEED, evt.time + dt, p, outfeed_id=k0))
 
 
 def fcfs(parcel) -> deque[int]:
