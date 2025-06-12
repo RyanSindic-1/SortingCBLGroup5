@@ -188,7 +188,6 @@ class PosiSorterSystem:
         self.service_times = {}
         # track which outfeed each parcel was assigned to (parcel.id → outfeed_id)
         self.assignment = {}
-
         self.assignment_l = {}
     
         self.WINDOW_DURATION = timedelta(seconds=(self.dist_scanner_to_outfeeds / self.belt_speed))
@@ -300,8 +299,9 @@ class PosiSorterSystem:
 
             elif evt.type == Event.EXIT_OUTFEED:
                 k    = evt.outfeed_id
-                feed = self.outfeeds[k]
                 parcel = evt.parcel
+                self.assignment[parcel.id] = k + 1 # Store outfeed assignment (1-indexed)
+                feed = self.outfeeds[k]
                 wall_clock = (t0 + evt.time).time()
                 if parcel.recirculation_count == 0:
                     parcel.sorted_first_try = True
@@ -318,7 +318,14 @@ class PosiSorterSystem:
 
             elif evt.type == Event.RECIRCULATE:
                 parcel = evt.parcel
-
+                # ── NEW: log the recirculation event ───────────────────────────────────
+                wall_clock = (t0 + evt.time).time()          # convert sim-time → clock-time
+                attempt    = parcel.recirculation_count + 1  # about to increment below
+                print(
+                    f"[{wall_clock}] Parcel {parcel.id} with feasible outfeeds "
+                    f"{parcel.feasible_outfeeds} has been recirculated (attempt {attempt})."
+                )
+                # ───────────────────────────────────────────────────────────────────────
                 if parcel.recirculation_count < 3:
                     parcel.recirculation_count += 1
                     time_to_arrival = timedelta(seconds=self.dist_outfeeds_to_infeeds / self.belt_speed)
@@ -356,7 +363,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile("PosiSorterData2.xlsx")
+    xlsx_path = pd.ExcelFile("PosiSorterData1.xlsx")
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -399,6 +406,26 @@ def main():
     system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
     system.simulate(parcels)
 
+        # ------------------------------------------------------------------
+    # 4.  WRITE A NEW WORKBOOK WITH THE EXTRA “Simulated Outfeed” COLUMN
+    # ------------------------------------------------------------------
+    outfeed_col = parcels_df["Parcel Number"].map(system.assignment)     # aligns by ID
+    parcels_df_with_outfeed = parcels_df.copy()
+    parcels_df_with_outfeed["Simulated Outfeed"] = outfeed_col
 
+    in_path  = "PosiSorterData1.xlsx"        # <─ plain string
+    xls      = pd.ExcelFile(in_path)         # use for reading
+    out_path = in_path.replace(
+    ".xlsx", "_with_sim_outfeeds.xlsx")  # works because in_path is str
+
+
+    with pd.ExcelWriter(out_path, engine="openpyxl", mode="w") as writer:
+        # Overwrite Parcels sheet with the augmented dataframe
+        parcels_df_with_outfeed.to_excel(writer, sheet_name="Parcels", index=False)
+        # Copy the other sheets exactly as they were
+        layout_df.to_excel(writer, sheet_name="Layout",  index=False)
+        # (Add more sheets here if your original file contains them)
+
+        
 if __name__ == "__main__":
     main()
