@@ -264,7 +264,7 @@ def load_balance_length(parcel):
     return None
 
 def load_balance_time_simple(parcel):
-    """Marker: time-based load balancing without local search."""
+    """time-based load balancing without local search."""
     return None
 
 def load_balance_length_simple(parcel):
@@ -276,15 +276,15 @@ def handle_enter_scanner_time_simple(self, evt, fes):
     from DES_GoodCode_implemented import Event
 
     p = evt.parcel
-    # 1) Greedy op basis van huidige time-loads
+    # Greedy based on current time-loads
     k0 = greedy_time(self, p)
     if k0 is None:
-        # Geen kanaal vrij → recirculatie
+        # No feasible outfeed can accept the parcel right now, so we recirculate it.
         self.recirculated_count += 1
         dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
         fes.add(Event(Event.RECIRCULATE, evt.time + dt, p))
     else:
-        # Plan direct naar ENTER_OUTFEED
+        # Schedule the ENTER_OUTFEED event for the chosen outfeed.
         dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
         fes.add(Event(Event.ENTER_OUTFEED, evt.time + dt, p, outfeed_id=k0))
 
@@ -293,13 +293,15 @@ def handle_enter_scanner_length_simple(self, evt, fes):
     from DES_GoodCode_implemented import Event
 
     p = evt.parcel
-    # 1) Greedy op basis van huidige length-loads
+    # Greedy based on current length-loads
     k0 = greedy_length(self, p)
     if k0 is None:
+        # No feasible outfeed can accept the parcel right now, so we recirculate it.
         self.recirculated_count += 1
         dt = timedelta(seconds=(self.dist_outfeeds_to_infeeds / self.belt_speed))
         fes.add(Event(Event.RECIRCULATE, evt.time + dt, p))
     else:
+        # Schedule the ENTER_OUTFEED event for the chosen outfeed.
         dt = timedelta(seconds=(self.dist_scanner_to_outfeeds + k0 * self.dist_between_outfeeds) / self.belt_speed)
         fes.add(Event(Event.ENTER_OUTFEED, evt.time + dt, p, outfeed_id=k0))
 
