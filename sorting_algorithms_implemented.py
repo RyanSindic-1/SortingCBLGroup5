@@ -353,7 +353,7 @@ def genetic(parcel, population_size=50, generations=100, mutation_rate=0.1) -> i
     # Initial population
     population = [random.choice(feasible_outfeeds) for _ in range(population_size)]
     
-    # Evaluate fitness
+    # Evaluate fitness (ranking)
     for _ in range(generations):
         fitness_scores = [fitness(individual) for individual in population]
 
