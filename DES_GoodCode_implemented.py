@@ -1,5 +1,5 @@
 # main.py
-
+import numpy as np
 import heapq
 import time
 import pandas as pd
@@ -8,7 +8,7 @@ from datetime import timedelta
 from sorting_algorithms_implemented import (fcfs, genetic, initialize_ml_model, mlfs, 
 handle_enter_scanner_time, load_balance_time, handle_enter_scanner_length, 
 load_balance_length, load_balance_length_simple, load_balance_time_simple, 
-handle_enter_scanner_length_simple, handle_enter_scanner_time_simple
+handle_enter_scanner_length_simple, handle_enter_scanner_time_simple, LBSL_with_logging
 )
 import math
 from collections import deque
@@ -147,7 +147,8 @@ class PosiSorterSystem:
     """
     A class to represent the sorter system. 
     """
-    def __init__(self, layout_df, num_outfeeds, sorting_algorithm) -> None:
+    def __init__(self, layout_df, num_outfeeds, sorting_algorithm, ml_model=None) -> None:
+        
         self.belt_speed                = layout_df.loc[
             layout_df['Layout property'] == 'Belt Speed', 'Value'
         ].values[0]
@@ -174,8 +175,8 @@ class PosiSorterSystem:
             self.dist_outfeeds_to_infeeds = None
 
         self.num_outfeeds = num_outfeeds
-        # self.outfeeds = [Outfeed(max_length=4.5) for _ in range(self.num_outfeeds)]
-        self.outfeeds = [Outfeed(max_length=outfeed_lengths[k]) for k in range(self.num_outfeeds)]
+        self.outfeeds = [Outfeed(max_length=4.5) for _ in range(self.num_outfeeds)]
+        #self.outfeeds = [Outfeed(max_length=outfeed_lengths[k]) for k in range(self.num_outfeeds)]
         self.sorting_algorithm = sorting_algorithm
 
         # For statistics
@@ -200,11 +201,69 @@ class PosiSorterSystem:
         self.REBALANCE_INTERVAL = 1
         self.rebal_ctr = 0
         # record parcels that had to recirculate because no outfeed was free “this round”
+        if ml_model is None:
+            raise ValueError("You must pass ml_model to PosiSorterSystem")
+        self.ml_model = ml_model
         self.first_pass_failures = set()
+        self.training_data = []
+        self._baseline_algo = None
+
+    def _logging_wrapper(self, parcel):
+        """
+        Internal: run baseline_algo, log (features,label), then return label.
+        """
+        # 1) extract features against the CURRENT system state
+        feat  = self.ml_model.extract_features(parcel, self)
+        # 2) get the ground-truth label
+        label = self._baseline_algo(parcel)
+        # 3) store it
+        self.training_data.append((feat, label))
+        return label
+
+    def collect_training_data(self, parcels: list, baseline_algo):
+        """
+        Run one simulation under `baseline_algo`, logging (feat,label) pairs in
+        self.training_data.
+        """
+        # clear any old data
+        del self.training_data[:]  
+        # remember which algo to call inside the wrapper
+        self._baseline_algo    = baseline_algo
+        # swap in our logging wrapper
+        self.sorting_algorithm = self._logging_wrapper
+        # run the sim (fills training_data)
+        self.simulate(parcels)
+        # restore the original algorithm
+        self.sorting_algorithm = baseline_algo
+
+    def train_ml_model(self):
+        """
+        Build X,y from self.training_data and fit ml_model to imitate the baseline.
+        """
+        if not self.training_data:
+            raise RuntimeError("No training data: call collect_training_data first")
+        feats, labels = zip(*self.training_data)
+        X = np.vstack(feats)
+        y = np.array(labels, dtype=int)
+        self.ml_model.clf.fit(X, y)
+        self.ml_model.is_trained = True
+        print(f"Trained ML model on {len(y)} examples")
+
     def handle(self, evt):
         pass
     
     def simulate(self, parcels) -> None:
+        
+        self.recirculated_count = 0
+        self.outfeed_counts    = [0] * self.num_outfeeds
+        self.non_sorted_parcels = 0
+        self.loads             = {k: 0.0 for k in range(self.num_outfeeds)}
+        self.loads_l           = {k: 0.0 for k in range(self.num_outfeeds)}
+        self.service_times     = {}
+        self.assignment        = {}
+        self.assignment_l      = {}
+        self.window.clear()
+        self.rebal_ctr         = 0
         fes = FES()
         t = timedelta(0)
         t0 = parcels[0].arrival_time
@@ -313,7 +372,7 @@ class PosiSorterSystem:
                 wall_clock = (t0 + evt.time).time()
                 if parcel.recirculation_count == 0:
                     parcel.sorted_first_try = True
-                print(f"[{wall_clock}] Parcel {parcel.id} removed from outfeed {k}")
+                #print(f"[{wall_clock}] Parcel {parcel.id} removed from outfeed {k}")
 
                 feed.update(feed.time_until_next_discharge)
                 self.loads[k] -= self.service_times.pop(parcel.id)
@@ -363,7 +422,7 @@ class PosiSorterSystem:
         sorted_first_try_count = sum(1 for p in parcels if p.sorted_first_try)
         print(f"Sorting success rate (on first try): {( sorted_first_try_count / len(parcels) * 100):.2f}% ")
         print(f"Run time: {(end - start): .4f} seconds")
-
+        print(f"Sorting Alrgorithm: {self.sorting_algorithm.__name__ if callable(self.sorting_algorithm) else self.sorting_algorithm}")
 
 # -------------------------------------------------------------------------- #
 # RUN SIMULATION                                                             #
@@ -371,7 +430,8 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_path = pd.ExcelFile(r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx")
+    xlsx_string = r"PosiSorterData_O5.xlsx"  # <─ plain string
+    xlsx_path = pd.ExcelFile(xlsx_string)
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
     layout_df = xls.parse('Layout')
@@ -385,45 +445,51 @@ def main():
     model_path = None  # e.g. "outfeed_model.pkl" if you saved earlier
     ml = initialize_ml_model(model_path)
 
+    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=load_balance_length, ml_model=ml)
+    system.training_data.clear()
+    system.simulate(parcels)
+    print(f"Collected {len(system.training_data)} training examples from load_balance_length_simple")
+   
     if model_path is None:
-        # Quick example: train on some tiny synthetic dataset.
-        # In practice, replace this with real historical labels:
-        example_parcels = random.sample(parcels, min(len(parcels), 200))
-        X_train = [ml.parcel_to_features(p) for p in example_parcels]
-        # For labels, let’s pretend “true” outfeed = the first feasible_outfeed for each parcel:
-        raw_sample = random.sample(parcels, min(len(parcels), 200))
-        # Keep only those with nonempty feasible list
-        example_parcels = [p for p in raw_sample if p.feasible_outfeeds]
-        y_train          = [p.feasible_outfeeds[0] for p in example_parcels]
-        if not example_parcels:
-            raise RuntimeError("All sampled parcels lack feasible_outfeeds; aborting ML training.")
-        ml.fit(example_parcels, y_train)
+        system.training_data[:] = []
+        # 2) Run a simulation *under* load_balance_length so your instrumented handler fills training_data
+        system.sorting_algorithm = load_balance_length
+        system.simulate(parcels)
+        print(f"Collected {len(system.training_data)} examples from load_balance_length")
+        clean_data = [(f, k) for (f, k) in system.training_data if k is not None]
+        if not clean_data:
+            raise RuntimeError("No valid training examples (all labels were None)")
+        feats, labels = zip(*clean_data)
+        X_train = np.vstack(feats)
+        y_train = np.array(labels, dtype=int)
 
-
+        ml.clf.fit(X_train, y_train)
+        ml.is_trained = True
+        print(f"Retrained ML on {len(y_train)} examples.")
+    else:
+        # If you have a saved model, load it and just use mlfs:
+        system.sorting_algorithm = lambda p: mlfs(p, system)
+    
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
-    
-    #sorting_algo = fcfs
-    #sorting_algo = genetic
-    #sorting_algo = mlfs
-    sorting_algo = load_balance_time
-    #sorting_algo = load_balance_length
-    #sorting_algo = load_balance_length_simple
-    #sorting_algo = load_balance_time_simple
-
-
-    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=sorting_algo)
+    system.sorting_algorithm = lambda p: mlfs(p, system)   
+    #system.sorting_algorithm = fcfs
+    #system.sorting_algorithm = genetic
+    #system.sorting_algorithm = load_balance_time
+    #system.sorting_algorithm = load_balance_length
+    #system.sorting_algorithm = load_balance_length_simple
+    #system.sorting_algorithm = load_balance_time_simple
+    #system.sorting_algorithm = lambda p: mlfs(p, system)
     system.simulate(parcels)
-
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # 4.  WRITE A NEW WORKBOOK WITH THE EXTRA “Simulated Outfeed” COLUMN
     # ------------------------------------------------------------------
     outfeed_col = parcels_df["Parcel Number"].map(system.assignment)     # aligns by ID
     parcels_df_with_outfeed = parcels_df.copy()
     parcels_df_with_outfeed["Simulated Outfeed"] = outfeed_col
 
-    in_path  = r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx"        # <─ plain string
+    in_path  = xlsx_string     # <─ plain string
     xls      = pd.ExcelFile(in_path)         # use for reading
     out_path = in_path.replace(
     ".xlsx", "_with_sim_outfeeds.xlsx")  # works because in_path is str

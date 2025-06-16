@@ -9,6 +9,20 @@ import numpy as np
 from ml_sorting import OutfeedML
 
 # ────────────────────────────────────────────────────────────────────────────────
+
+def LBSL_with_logging(parcel, system):
+    """
+    Use genetic() to pick the best gate *and* record the feature→label pair
+    for later ML training.
+    """
+    # 1) extract features
+    feats = ml_model.extract_features(parcel, system)
+    # 2) get the “ground-truth” label
+    label = load_balance_length(parcel)
+    # 3) record it
+    system.training_data.append((feats, label))
+    # 4) return exactly what LBSL() would
+    return label
 def greedy_time(self, p):
     """
     Initial assignment: choose feasible outfeed with minimal tracked load.
@@ -224,10 +238,11 @@ def handle_enter_scanner_length(self, evt, fes):
     from DES_GoodCode_implemented import Event
 
     p = evt.parcel
-    # 1) greedy assign
+
+    # pick the gate exactly as the handler would
     k0 = greedy_length(self, p)
-    self.assignment_l[p.id] = k0
-    # track failure on first pass
+
+    
     if k0 is None:
         self.first_pass_failures.add(p.id)
     # 2) Append (arrival_time, p) to sliding window and evict old entries
@@ -244,6 +259,9 @@ def handle_enter_scanner_length(self, evt, fes):
     # 4) schedule
     t = evt.time
     final_k = self.assignment_l[p.id]
+
+    feat = self.ml_model.extract_features(p, self)
+    self.training_data.append((feat, final_k))
     if final_k is None:
         # Recirculate: schedule ENTER_SCANNER again after full loop back time
         self.recirculated_count += 1
@@ -386,7 +404,7 @@ def initialize_ml_model(model_path: str = None):
 
 
 
-def mlfs(parcel) -> deque[int]:
+def mlfs(parcel, system) -> deque[int]:
     """
     ML-First-Serve with confidence threshold:
       1. If top prediction p>=threshold and feasible, try it first.
@@ -400,25 +418,34 @@ def mlfs(parcel) -> deque[int]:
         )
 
     # Extract probabilities and class labels
-    feats   = ml_model.parcel_to_features(parcel).reshape(1, -1)
+    feats = ml_model.extract_features(parcel, system).reshape(1, -1)
     proba   = ml_model.clf.predict_proba(feats)[0]   # e.g. [0.1,0.7,0.2]
     classes = ml_model.clf.classes_                 # e.g. [0,1,2]
 
+    label_proba = { gate: p for gate, p in zip(classes, proba) }
     # Identify top class and its confidence
     idx_max = int(np.argmax(proba))
     p_max   = proba[idx_max]
     feas    = list(parcel.feasible_outfeeds)
+    feas_conf = [( label_proba.get(g, 0.0), g ) for g in feas]
 
-    # 1) High-confidence & feasible → prioritized first
-    if p_max >= ml_model.threshold and idx_max in feas:
-        rest = [f for f in feas if f != idx_max]
-        return deque([idx_max] + rest)
 
-    # 2) Fallback to mechanical feasibility list
-    if feas:
-        return deque(feas)
-
-    # 3) No mechanical options → rank all gates by descending prob
-    ranked = [c for _, c in sorted(zip(proba, classes), key=lambda x: -x[0])]
-    parcel.feasible_outfeeds = ranked
-    return deque(ranked)
+    print(f"[DEBUG] parcel {parcel.id}: proba={proba}, top_idx={idx_max}, top_p={p_max:.3f}, feas={feas}")
+    
+    if feas_conf:
+        # 3) pick best among feasible
+        best_p, best_gate = max(feas_conf, key=lambda x: x[0])
+        # 4) if it clears the threshold, bump it to front
+        if best_p >= ml_model.threshold:
+            rest = [g for g in feas if g != best_gate]
+            return deque([best_gate] + rest)
+        # 5) otherwise fall back to full ML-ranked feasible ordering
+        #    or even FCFS order—your choice
+        #    Here: full ML ranking among feas
+        ranked = [g for _,g in sorted(feas_conf, key=lambda x: -x[0])]
+        return deque(ranked)
+        
+    # 6) if no mechanical options, fall back to ranking all gates by ML
+    ranked_all = [c for _, c in sorted(zip(proba, classes), key=lambda x: -x[0])]
+    parcel.feasible_outfeeds = ranked_all
+    return deque(ranked_all)

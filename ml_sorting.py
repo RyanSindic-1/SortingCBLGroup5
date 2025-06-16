@@ -1,10 +1,8 @@
 import numpy as np
 import joblib
 from sklearn.ensemble import RandomForestClassifier
-try:
-    from imblearn.over_sampling import RandomOverSampler
-except ImportError:
-    RandomOverSampler = None
+from imblearn.over_sampling import RandomOverSampler
+
 
 class OutfeedML:
     """
@@ -113,3 +111,55 @@ class OutfeedML:
         inst.clf = joblib.load(model_path)
         inst.is_trained = True
         return inst
+    def extract_features(self, parcel, system) -> np.ndarray:
+        # ── static parcel features ───────────────────────────
+        vol    = parcel.get_volume()
+        wt     = parcel.weight
+        feas   = list(parcel.feasible_outfeeds)
+        m      = len(feas)
+        min_idx = float(min(feas)) if m else -1.0
+        avg_idx = float(sum(feas)/m) if m else -1.0
+
+        # ── dynamic loads for those feasible gates ──────────
+        if m:
+            time_loads = np.array([system.loads[k]   for k in feas])
+            len_loads  = np.array([system.loads_l[k] for k in feas])
+            rem_caps   = np.array([
+                system.outfeeds[k].max_length - system.loads_l[k]
+                for k in feas
+            ])
+            dists      = np.array([
+                system.dist_scanner_to_outfeeds + k * system.dist_between_outfeeds
+                for k in feas
+            ])
+        else:
+            # no feas gates → dummy arrays so stats() won’t crash
+            time_loads = len_loads = rem_caps = dists = np.array([0.0])
+
+        # helper: min/mean/max/std
+        def stats(arr):
+            return float(arr.min()), float(arr.mean()), float(arr.max()), float(arr.std())
+
+        t_min, t_avg, t_max, t_std = stats(time_loads)
+        l_min, l_avg, l_max, l_std = stats(len_loads)
+        r_min, r_avg, r_max, r_std = stats(rem_caps)
+        d_min, d_avg, d_max, d_std = stats(dists)
+
+        # global imbalance (time-based)
+        all_time = np.array(list(system.loads.values()))
+        imb_time = float(all_time.max() - all_time.min())
+
+        # recirculation count
+        recirc = float(parcel.recirculation_count)
+
+        # combine into one vector
+        feats = [
+            vol, wt, m, min_idx, avg_idx,
+            t_min, t_avg, t_max, t_std,
+            l_min, l_avg, l_max, l_std,
+            r_min, r_avg, r_max, r_std,
+            d_min, d_avg, d_max, d_std,
+            recirc,
+            imb_time,
+        ]
+        return np.array(feats, dtype=float)
