@@ -360,7 +360,9 @@ class PosiSorterSystem:
         pass
     
     def simulate(self, parcels) -> None:
-        
+        for p in parcels:
+            p.recirculation_count = 0
+            p.sorted_first_try   = False
         self.recirculated_count = 0
         self.outfeed_counts    = [0] * self.num_outfeeds
         self.non_sorted_parcels = 0
