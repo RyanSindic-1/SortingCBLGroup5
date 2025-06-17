@@ -539,7 +539,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_string = r"PosiSorterData_O5.xlsx"  # <─ plain string
+    xlsx_string = r"PosiSorterData_O50.xlsx"  # <─ plain string
     xlsx_path = pd.ExcelFile(xlsx_string)
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
@@ -582,7 +582,7 @@ def main():
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
-    system.sorting_algorithm = lambda p: mlfs(p, system)   
+    system.sorting_algorithm = lambda p: genetic(p, system)   
     #system.sorting_algorithm = fcfs
     #system.sorting_algorithm = genetic
     #system.sorting_algorithm = load_balance_time
