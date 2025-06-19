@@ -553,17 +553,35 @@ def main():
     parcels, num_outfeeds        = load_parcels_from_clean_df(parcels_df)
 
     # 2. INITIALIZE & (OPTIONALLY) TRAIN / LOAD ML MODEL
+    #    If you have a pretrained model, specify its path. Otherwise, pass None:
     model_path = None
     ml = initialize_ml_model(model_path)
 
     # Build the system once — you can re-use it for each simulation if you clear state between runs
-    system = PosiSorterSystem(
-        layout_df,
-        num_outfeeds,
-        sorting_algorithm=None,  # we’ll set this per-run below
-        ml_model=ml
-    )
+    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=load_balance_length, ml_model=ml)
+    system.training_data.clear()
+    system.simulate(parcels)
+    print(f"Collected {len(system.training_data)} training examples from load_balance_length_simple")
+   
+    if model_path is None:
+        system.training_data[:] = []
+        # 2) Run a simulation *under* load_balance_length so your instrumented handler fills training_data
+        system.sorting_algorithm = load_balance_length
+        system.simulate(parcels)
+        print(f"Collected {len(system.training_data)} examples from load_balance_length")
+        clean_data = [(f, k) for (f, k) in system.training_data if k is not None]
+        if not clean_data:
+            raise RuntimeError("No valid training examples (all labels were None)")
+        feats, labels = zip(*clean_data)
+        X_train = np.vstack(feats)
+        y_train = np.array(labels, dtype=int)
 
+        ml.clf.fit(X_train, y_train)
+        ml.is_trained = True
+        print(f"Retrained ML on {len(y_train)} examples.")
+    else:
+        # If you have a saved model, load it and just use mlfs:
+        system.sorting_algorithm = lambda p: mlfs(p, system)
     # ────────────────────────────────────────────────────────────────────────────────
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #
@@ -571,12 +589,12 @@ def main():
     #    to run with that algorithm.
     # ────────────────────────────────────────────────────────────────────────────────
 
-    # system.sorting_algorithm = lambda p: mlfs(p, system)
-    #system.sorting_algorithm = fcfs
-    # system.sorting_algorithm = genetic
+    #system.sorting_algorithm = lambda p: mlfs(p, system)
+    system.sorting_algorithm = fcfs
+    #system.sorting_algorithm = genetic
     #system.sorting_algorithm = load_balance_time
     # system.sorting_algorithm = load_balance_length
-    system.sorting_algorithm = load_balance_length_simple
+    #system.sorting_algorithm = load_balance_length_simple
     # system.sorting_algorithm = load_balance_time_simple
 
     # run the simulation
