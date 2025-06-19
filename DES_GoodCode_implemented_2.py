@@ -558,9 +558,9 @@ def main():
     ml = initialize_ml_model(model_path)
 
     # Build the system once — you can re-use it for each simulation if you clear state between runs
-    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=load_balance_length, ml_model=ml)
+    system = PosiSorterSystem(layout_df, num_outfeeds, sorting_algorithm=None, ml_model=ml)
     system.training_data.clear()
-    system.simulate(parcels)
+    #system.simulate(parcels)
     print(f"Collected {len(system.training_data)} training examples from load_balance_length_simple")
    
     if model_path is None:
