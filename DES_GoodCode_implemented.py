@@ -582,9 +582,9 @@ def main():
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
-    system.sorting_algorithm = lambda p: genetic(p, system)   
+    system.sorting_algorithm = lambda p: mlfs(p, system)
+    #system.sorting_algorithm = lambda p: genetic(p, system)   
     #system.sorting_algorithm = fcfs
-    #system.sorting_algorithm = genetic
     #system.sorting_algorithm = load_balance_time
     #system.sorting_algorithm = load_balance_length
     #system.sorting_algorithm = load_balance_length_simple
