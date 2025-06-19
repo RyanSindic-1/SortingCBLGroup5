@@ -590,10 +590,10 @@ def main():
     # ────────────────────────────────────────────────────────────────────────────────
 
     #system.sorting_algorithm = lambda p: mlfs(p, system)
-    system.sorting_algorithm = fcfs
+    #system.sorting_algorithm = fcfs
     #system.sorting_algorithm = genetic
     #system.sorting_algorithm = load_balance_time
-    # system.sorting_algorithm = load_balance_length
+    system.sorting_algorithm = load_balance_length
     #system.sorting_algorithm = load_balance_length_simple
     # system.sorting_algorithm = load_balance_time_simple
 
@@ -603,7 +603,7 @@ def main():
     # ────────────────────────────────────────────────────────────────────────────────
     # 4. WRITE OUT “Simulated Outfeed” COLUMN
     # ────────────────────────────────────────────────────────────────────────────────
-    parcels_df['Simulated Outfeed'] = parcels_df['Parcel Number'].map(system.assignment)
+    parcels_df['Outfeed Number'] = parcels_df['Parcel Number'].map(system.assignment)
     out_path = xlsx_string.replace('.xlsx', '_with_sim_outfeeds.xlsx')
     with pd.ExcelWriter(out_path, engine='openpyxl', mode='w') as writer:
         parcels_df.to_excel(writer, sheet_name='Parcels', index=False)
