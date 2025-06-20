@@ -526,7 +526,15 @@ class PosiSorterSystem:
         for i, count in enumerate(self.outfeed_counts):
             print(f"Parcels sent to Outfeed {i}: {count}")
         print(f"Parcels not sorted (recirculated 3 times): {self.non_sorted_parcels}")
-        print(f"Throughput (sorted): {sum(self.outfeed_counts)}")
+        print(f"Parcels Sorted: {sum(self.outfeed_counts)}")
+        # compute throughput rate
+        sorted_count       = sum(self.outfeed_counts)
+        total_sim_seconds  = t.total_seconds()
+        tps  = sorted_count / total_sim_seconds
+        tpm  = tps * 60
+        tph  = tps * 3600
+        print(f"Throughput rate: {tps:.3f} parcels/sec "
+              f"({tpm:.1f} parcels/min, {tph:.1f} parcels/hr)")
         print(f"Sorting success rate: (incl. recirculation) {((len(parcels) - self.non_sorted_parcels)  / len(parcels) * 100):.2f}% ")
         sorted_first_try_count = sum(1 for p in parcels if p.sorted_first_try)
         print(f"Sorting success rate (on first try): {( sorted_first_try_count / len(parcels) * 100):.2f}% ")
@@ -539,7 +547,7 @@ class PosiSorterSystem:
 
 def main():
     # 1. LOAD & CLEAN DATA
-    xlsx_string = r"PosiSorterData_O50.xlsx"  # <─ plain string
+    xlsx_string = r"C:\Users\20234607\OneDrive - TU Eindhoven\Y2\Q4\CBL\Code\Useful code files\PosiSorterData2(1).xlsx"  # <─ plain string
     xlsx_path = pd.ExcelFile(xlsx_string)
     xls = pd.ExcelFile(xlsx_path)
     parcels_df = xls.parse('Parcels')
@@ -582,10 +590,10 @@ def main():
     # 3. CHOOSE WHICH ALGORITHM TO USE:
     #    ───────────────────────────────────────────────────────────────────────
     #    Comment/uncomment whichever one you want:
-    system.sorting_algorithm = lambda p: mlfs(p, system)
-    #system.sorting_algorithm = lambda p: genetic(p, system)   
+    #system.sorting_algorithm = lambda p: mlfs(p, system)   
     #system.sorting_algorithm = fcfs
-    #system.sorting_algorithm = load_balance_time
+    #system.sorting_algorithm = genetic
+    system.sorting_algorithm = load_balance_time
     #system.sorting_algorithm = load_balance_length
     #system.sorting_algorithm = load_balance_length_simple
     #system.sorting_algorithm = load_balance_time_simple
